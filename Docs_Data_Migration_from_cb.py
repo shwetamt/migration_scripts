@@ -6,6 +6,7 @@ from couchbase_core.n1ql import _N1QLQuery, N1QLRequest
 import datetime, _random
 import asyncio
 import json
+import os
 from common.common_messages_pb2 import RequestContext
 from tickleDb.document_pb2 import ModifyDocsRequest, CreateDocsRequest, Doc
 from tickleDb.document_pb2_grpc import DocServiceStub
@@ -18,6 +19,8 @@ stub = DocServiceStub(channel)
 
 cbhost = 'cb-backup-ce-node-1.internal.mindtickle.com:8091'
 
+cb = Bucket('couchbase://' + cbhost + '/ce', username='couchbase', password='couchbase')
+
 companyTypes = ['CUSTOMER','PROSPECT','QA','DEV','UNKNOWN','DELETED']
 
 
@@ -25,6 +28,16 @@ docs = {90: 'AUDIO', 93: 'PDF', 94: 'PPT', 95: 'WORD', 96: 'XLS', 0: 'INVALID'}
 mediaTypes = list(docs.keys())
 
 base_name = 'documents_media'
+
+
+def get_dir(prefix):
+  parent_dir = os.getcwd()
+  dir = f'{prefix}_compaies_media'
+  path = os.path.join(parent_dir, dir)
+  if not os.path.exists(path):
+    os.makedirs(path)
+  return path
+
 
 collections = {
   'infra_media': 'infra_media',
@@ -49,11 +62,8 @@ region_cdn = {
 }
 
 failed_companies = set()
-company_settings = {}
-processed_companies = set()
-
-def get_user_id():
-  pass
+companySettings = {}
+processed_companies = []
 
 
 def generateId(media_type):
@@ -164,7 +174,7 @@ def get_mapped_document_obj(mapped_obj, media_obj, s3key):
 def get_mapped_media_objects(media_obj):
 
   cId = media_obj.get('companyId', "")
-  comp_obj = company_settings.get(f'{cId}')
+  comp_obj = companySettings.get(f'{cId}.settings')
   if comp_obj is None:
     return []
 
@@ -231,19 +241,18 @@ def get_create_requests(media_obj, user_id, tenant_id):
 #         failed_media.add(obj_id)
 
 
-async def migrate_company(comp_id, cmp_type):
-  media_objs=[]
+async def migrate_company(comp_id, medias):
+
   try:
-    cb = Bucket('couchbase://' + cbhost + '/ce', username='couchbase', password='couchbase')
+
     create_requests_list = []
-    medias = N1QLRequest(_N1QLQuery('SELECT META().id,* FROM ce WHERE ce.companyId=$1', comp_id), cb)
     for media_obj in medias:
       type = media_obj['ce'].get('type', 0)
       if type not in mediaTypes:
         continue
       ce_obj = media_obj['ce']
       cId = comp_id
-      comp_obj = company_settings.get(f'{cId}')
+      comp_obj = companySettings.get(f'{cId}.settings')
       if comp_obj is None:
         continue
       user_id = ce_obj.get('uploadedById', '_default_migrated')
@@ -252,6 +261,7 @@ async def migrate_company(comp_id, cmp_type):
 
       create_requests = get_create_requests(ce_obj, user_id, orgId)
       create_requests_list.append(create_requests)
+
 
     l = len(create_requests_list)
     for i in range((l//10)+1):
@@ -281,16 +291,6 @@ async def companies_migration(type='QA'):
 
 
 
-def read_company_settings():
-  global company_settings
-  with open('company_settings.csv') as f:
-    csv_reader = csv.reader(f)
-    for row in csv_reader:
-      id, obj = row[0], json.loads(row[1])
-      company_settings[id]=obj
-
-
-
 
 def read_processed_companies():
   global processed_companies
@@ -305,34 +305,125 @@ def read_processed_companies():
     return
 
 
+# async def docs_data_mig(compType='QA'):
+#
+#   company_settings = {}
+#   companies_list = []
+#   # doc=cb.get('997213202392614482.settings')
+#   companies_by_types = N1QLRequest(_N1QLQuery('SELECT META().id,* FROM ce WHERE ce.companyType=$1', compType), cb)
+#   for comp_obj in companies_by_types:
+#     # if comp_obj['ce'].get('companyState', 'ACTIVE') != 'ACTIVE':
+#     #   continue
+#     cmp_id = comp_obj.get('id', "").split('.')
+#     if not (len(cmp_id) == 2 and cmp_id[1] == 'settings'):
+#       continue
+#     cmp_id=cmp_id[0]
+#     company_settings[cmp_id] = comp_obj['ce']
+#     companies_list.append([cmp_id])
+#
+#   with open(get_file_name("", compType), 'w') as f:
+#     csv_writer = csv.writer(f)
+#     csv_writer.writerows(companies_list)
+#
+#
+#   with open('company_settings.csv', 'a') as f:
+#     csv_writer = csv.writer(f)
+#     for cId, cObj in company_settings.items():
+#       csv_writer.writerow([cId, json.dumps(cObj)])
+
+
+def load_company_settings():
+  global companySettings
+
+  with open(f'company_settings.csv') as f:
+    csv_reader = csv.reader(f)
+    for row in csv_reader:
+      id, obj = row[0], json.loads(row[1])
+      companySettings[id] = obj
 
 
 
-async def docs_data_mig(compType='QA'):
-  cb = Bucket('couchbase://' + cbhost + '/ce', username='couchbase', password='couchbase')
+
+def read_company_settings_from_db():
   company_settings = {}
-  companies_list = []
-  # doc=cb.get('997213202392614482.settings')
-  companies_by_types = N1QLRequest(_N1QLQuery('SELECT META().id,* FROM ce WHERE ce.companyType=$1', compType), cb)
+  companies_by_types = N1QLRequest(_N1QLQuery('SELECT META().id,* FROM ce WHERE type=$1', 3), cb)
   for comp_obj in companies_by_types:
-    # if comp_obj['ce'].get('companyState', 'ACTIVE') != 'ACTIVE':
-    #   continue
-    cmp_id = comp_obj.get('id', "").split('.')
-    if not (len(cmp_id) == 2 and cmp_id[1] == 'settings'):
-      continue
-    cmp_id=cmp_id[0]
-    company_settings[cmp_id] = comp_obj['ce']
-    companies_list.append([cmp_id])
+    company_settings[comp_obj['id']] = comp_obj['ce']
 
-  with open(get_file_name("", compType), 'w') as f:
-    csv_writer = csv.writer(f)
-    csv_writer.writerows(companies_list)
-
-
-  with open('company_settings.csv', 'a') as f:
+  with open('company_settings.csv', 'w') as f:
     csv_writer = csv.writer(f)
     for cId, cObj in company_settings.items():
       csv_writer.writerow([cId, json.dumps(cObj)])
+
+
+
+async def migrate_media_by_company():
+  global processed_companies
+  companies_list = processed_companies
+  tasks=[]
+  path = get_dir('downloaded')
+
+  for comp_id in companies_list:
+    medias = []
+    file = os.path.join(path, f'media_to_migrate_{comp_id}.csv')
+    with open(file) as f:
+      csv_reader = csv.reader(f)
+      for row in csv_reader:
+        media_obj = json.loads(row[0])
+        medias.append(media_obj)
+    # migrate_company(comp_id, medias)
+    tasks.append(migrate_company(comp_id, medias))
+
+  await asyncio.gather(*tasks)
+
+
+
+failed_db_reads = []
+cnt=0
+
+async def read_media_by_company(batch_list):
+  global processed_companies
+  media_records = {}
+  global cnt
+  try:
+    medias = N1QLRequest(
+      _N1QLQuery('SELECT META().id, * FROM ce WHERE companyId in $1', batch_list), cb)
+    for media_obj in medias:
+      if media_obj['ce'].get('type') not in mediaTypes:
+        continue
+      cid = media_obj['ce']['companyId']
+      media_records.setdefault(cid, [])
+      media_records[cid].append([json.dumps(media_obj)])
+
+  except Exception as e:
+    failed_db_reads.extend(batch_list)
+    return
+
+  for comp_id in media_records:
+    records = media_records[comp_id]
+    path = get_dir('downloaded')
+    file = os.path.join(path, f'media_to_migrate_{comp_id}.csv')
+    with open(file, 'w') as f:
+      csv_writer = csv.writer(f)
+      csv_writer.writerows(records)
+
+  processed_companies.extend(list(media_records.keys()))
+
+
+
+
+
+async def read_batch_to_migrate_from_db():
+
+  companies_list = [comp.strip('.settings') for comp in companySettings.keys()]
+  companies_list=companies_list[:2]
+  batch =10
+  sz = len(companies_list)
+  await asyncio.gather(*[read_media_by_company(companies_list[i*batch:(i+1)*batch]) for i in range((sz//batch)+1)])
+
+  # for comp in companies_list[:20]:
+  #   read_media_by_company(comp)
+
 
 
 
@@ -341,21 +432,22 @@ async def docs_data_mig(compType='QA'):
 #     data_mig(comp_type)
 #   # res = await asyncio.gather(*[data_mig(comp_type) for comp_type in companyTypes])
 
+
 async def main():
 
-  comp_type = 'DEV'
 
-  await asyncio.gather(*[docs_data_mig(comp_type) for comp_type in companyTypes])
+  read_company_settings_from_db()
+  load_company_settings()
 
-  docs_data_mig(comp_type)
-  # read_processed_companies()
-  read_company_settings()
-
-  task = asyncio.create_task(companies_migration(comp_type))
+  task = asyncio.create_task(read_batch_to_migrate_from_db())
   await task
 
+  mig_task = asyncio.create_task(migrate_media_by_company())
+  await mig_task
 
-  # companies_migration(comp_type)
+
+  # read_processed_companies()
+
 
   # write_processed_migrations(comp_type)
   # write_failed_migrations(comp_type)

@@ -1,11 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="a7386038-6e9b-415e-9b62-66dec4ec5b48" name="Default Changelist" comment="" />
+    <list default="true" id="a7386038-6e9b-415e-9b62-66dec4ec5b48" name="Default Changelist" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
   <component name="JupyterTrust" id="02e97ac9-ddc9-4e25-8e96-ac19d404fcbb" />
   <component name="ProjectId" id="1lgFBZorApczDWmaFPIJsYtomDn" />
@@ -58,6 +63,7 @@
       <workItem from="1608010694353" duration="77000" />
       <workItem from="1608010972397" duration="1050000" />
       <workItem from="1608019317034" duration="582000" />
+      <workItem from="1608056962469" duration="4000" />
     </task>
     <servers />
   </component>
@@ -107,7 +113,7 @@
       <breakpoints>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/Docs_Data_Migration_from_cb.py</url>
-          <line>345</line>
+          <line>349</line>
           <option name="timeStamp" value="1" />
         </line-breakpoint>
       </breakpoints>
