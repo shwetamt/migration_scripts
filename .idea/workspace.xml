@@ -57,6 +57,7 @@
       <updated>1608010693221</updated>
       <workItem from="1608010694353" duration="77000" />
       <workItem from="1608010972397" duration="1050000" />
+      <workItem from="1608019317034" duration="582000" />
     </task>
     <servers />
   </component>
@@ -106,7 +107,7 @@
       <breakpoints>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/Docs_Data_Migration_from_cb.py</url>
-          <line>343</line>
+          <line>345</line>
           <option name="timeStamp" value="1" />
         </line-breakpoint>
       </breakpoints>

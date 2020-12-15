@@ -231,7 +231,7 @@ def get_create_requests(media_obj, user_id, tenant_id):
 #         failed_media.add(obj_id)
 
 
-async def migrate_company(comp_id):
+async def migrate_company(comp_id, cmp_type):
   media_objs=[]
   try:
     cb = Bucket('couchbase://' + cbhost + '/ce', username='couchbase', password='couchbase')
@@ -253,14 +253,17 @@ async def migrate_company(comp_id):
       create_requests = get_create_requests(ce_obj, user_id, orgId)
       create_requests_list.append(create_requests)
 
-
-    modifyDocsRequest = ModifyDocsRequest(request_context=RequestContext(user_id=user_id, tenant_id=orgId),
-                                          create_docs_request=create_requests_list)
-    resp = stub.ModifyDocs(modifyDocsRequest)
-    if resp['status']:
-      processed_companies.add(media_obj['id'])
-    else:
-      raise Exception("create media failed")
+    l = len(create_requests_list)
+    for i in range((l//10)+1):
+      batch_list = create_requests_list[i*10:(i+1)*10]
+      if len(batch_list) > 0:
+        modifyDocsRequest = ModifyDocsRequest(request_context=RequestContext(user_id=user_id, tenant_id=orgId),
+                                              create_docs_request=batch_list)
+        resp = stub.ModifyDocs(modifyDocsRequest)
+        if resp['status']:
+          processed_companies.add(media_obj['id'])
+        else:
+          raise Exception("create media failed")
 
   except Exception as e:
     failed_companies.add(comp_id)
@@ -273,8 +276,8 @@ async def companies_migration(type='QA'):
   with open(get_file_name("", type)) as f:
     csv_reader = csv.reader(f)
     # for row in csv_reader:
-    #   migrate_company(row[0])
-    await asyncio.gather(*[migrate_company(cmp[0]) for cmp in csv_reader])
+    #   migrate_company(row[0], type)
+    await asyncio.gather(*[migrate_company(cmp[0], type) for cmp in csv_reader])
 
 
 
@@ -289,27 +292,28 @@ def read_company_settings():
 
 
 
-def read_processed_companies(comp_type):
+def read_processed_companies():
   global processed_companies
-  try:
-    with open(get_file_name('processed', comp_type)) as f:
-      csv_reader = csv.reader(f)
-      for row in csv_reader:
-        processed_companies.add(row)
-  except Exception as e:
-    processed_companies = set()
+  for comp_type in companyTypes:
+    try:
+      with open(get_file_name('processed', comp_type)) as f:
+        csv_reader = csv.reader(f)
+        for row in csv_reader:
+          processed_companies.add(row)
+    except Exception as e:
+      pass
     return
 
 
 
 
 
-def docs_data_mig(compType='QA'):
+async def docs_data_mig(compType='QA'):
   cb = Bucket('couchbase://' + cbhost + '/ce', username='couchbase', password='couchbase')
   company_settings = {}
   companies_list = []
   # doc=cb.get('997213202392614482.settings')
-  companies_by_types = N1QLRequest(_N1QLQuery('SELECT META().id,* FROM ce WHERE ce.companyType=$1 LIMIT 20', compType), cb)
+  companies_by_types = N1QLRequest(_N1QLQuery('SELECT META().id,* FROM ce WHERE ce.companyType=$1', compType), cb)
   for comp_obj in companies_by_types:
     # if comp_obj['ce'].get('companyState', 'ACTIVE') != 'ACTIVE':
     #   continue
@@ -325,7 +329,7 @@ def docs_data_mig(compType='QA'):
     csv_writer.writerows(companies_list)
 
 
-  with open('company_settings.csv', 'w') as f:
+  with open('company_settings.csv', 'a') as f:
     csv_writer = csv.writer(f)
     for cId, cObj in company_settings.items():
       csv_writer.writerow([cId, json.dumps(cObj)])
@@ -341,14 +345,15 @@ async def main():
 
   comp_type = 'DEV'
 
-  # res = await asyncio.gather(*[docs_data_mig(comp_type) for comp_type in companyTypes])
+  await asyncio.gather(*[docs_data_mig(comp_type) for comp_type in companyTypes])
 
   docs_data_mig(comp_type)
-  read_processed_companies(comp_type)
+  # read_processed_companies()
   read_company_settings()
 
   task = asyncio.create_task(companies_migration(comp_type))
   await task
+
 
   # companies_migration(comp_type)
 
@@ -356,10 +361,10 @@ async def main():
   # write_failed_migrations(comp_type)
 
 
-
 if __name__ == '__main__':
   # main()
   asyncio.run(main())
+
 
 
 
