@@ -411,13 +411,25 @@ async def read_media_by_company(batch_list):
 
 
 
+def get_companies_by_type(comp_type = 'ALL'):
+  if comp_type=='ALL':
+    return [comp.strip('.settings') for comp in companySettings.keys()]
+
+  if comp_type not in companyTypes:
+    return []
+
+  companies = [comp.strip('.settings') for comp in companySettings if companySettings[comp]['companyType']==comp_type]
+  return companies
 
 
-async def read_batch_to_migrate_from_db():
 
-  companies_list = [comp.strip('.settings') for comp in companySettings.keys()]
-  companies_list=companies_list[:2]
-  batch =10
+
+async def read_batch_to_migrate_from_db(comp_type):
+
+  companies_list = get_companies_by_type()
+
+  # companies_list=companies_list[:2]
+  batch = 10
   sz = len(companies_list)
   await asyncio.gather(*[read_media_by_company(companies_list[i*batch:(i+1)*batch]) for i in range((sz//batch)+1)])
 
