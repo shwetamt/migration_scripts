@@ -55,6 +55,20 @@ streaming_bucket = {
   3: "mtgame-eu.mindtickle.com"
 }
 
+box_bucket = {
+  1: 'mtdocs-box-processed',
+  2: "mtdocs-us-box-processed",
+  3: "mtdocs-eu-box-processed"
+}
+
+
+croco_bucket = {
+  1: "mtdocs-conversion",
+  2: "mtdocs-us-conversion",
+  3: "mtdocs-eu-conversion"
+}
+
+
 region_cdn = {
   1: "ap-southeast-1",
   2: "us-east-1",
@@ -106,73 +120,204 @@ def write_processed_migrations(comp_type):
       w.writerow([comp])
 
 
+
 def getDoc(id, doc):
   return Doc(id=id, doc=doc)
 
 
-def get_audio_objects(mapped_obj, media_obj):
+
+def get_audio_objects(mapped_obj, cb_obj, cdn):
   mapped_list = []
+  media_obj = cb_obj['ce']
 
   if 'original_path' in media_obj and media_obj['original_path'] is not None:
     mobj = copy.deepcopy(mapped_obj)
-    mapped_list.append(get_mapped_audio_obj(mobj, media_obj, media_obj.get('origional_path')))
+    mapped_list.append(get_mapped_audio_obj(mobj, media_obj, region_bucket[cdn], media_obj.get('origional_path')))
 
   if 'mp3Path' in media_obj and media_obj['mp3Path'] is not None:
     mobj = copy.deepcopy(mapped_obj)
-    mapped_list.append(get_mapped_audio_obj(mobj, media_obj, media_obj.get('mp3Path')))
+    mapped_list.append(get_mapped_audio_obj(mobj, media_obj, region_bucket[cdn], media_obj.get('mp3Path')))
 
-  if 'streamPath' in media_obj and media_obj['streamPath'] is not None:
+  if 'vttSubtitlePath' in media_obj and media_obj['vttSubtitlePath'] is not None:
     mobj = copy.deepcopy(mapped_obj)
-    mapped_list.append(get_mapped_audio_obj(mobj, media_obj, media_obj.get('streamPath')))
+    mapped_list.append(get_subtitle_media(mobj, media_obj, region_bucket[cdn],  media_obj.get('vttSubtitlePath')))
+
+  # if 'flacPath' in media_obj and media_obj['flacPath'] is not None:
+  #   mobj = copy.deepcopy(mapped_obj)
+  #   mapped_list.append(get_mapped_audio_obj(mobj, media_obj, media_obj.get('flacPath')))
+
+  if 'transcriptPath' in media_obj and media_obj['transcriptPath'] is not None:
+    mobj = copy.deepcopy(mapped_obj)
+    mapped_list.append(get_transcription_media(mobj, media_obj, region_bucket[cdn], media_obj.get('vttSubtitlePath')))
 
   return mapped_list
 
 
+def get_audio_type(ext):
+  if ext=='mp3':
+    return "MP3"
+  return "UNDEFINED"
 
 
-def get_mapped_audio_obj(mapped_obj, media_obj, s3key):
+def get_mapped_audio_obj(mapped_obj, media_obj, bucket, s3key):
+
   mapped_obj["key"] = s3key
-  mapped_obj["type"] = docs[media_obj['type']]
-  mapped_obj["subtype"] = ''
+  mapped_obj["bucket"] = bucket
+  mapped_obj["type"] = 'AUDIO'
+  mapped_obj["subtype"] = get_audio_type(s3key.split('.')[-1])
   mapped_obj["sizeBytes"] = str(media_obj.get('size', 0))
-  mapped_obj['encodingMediaId'] = media_obj.get('encodingMediaId', '')
-  mapped_obj['transcodingSource'] = media_obj.get('transcodingSource', '')
+  # mapped_obj["height"]
+  # mapped_obj["width"]
+  # mapped_obj["numPages"]
+  mapped_obj["locationStatus"] = "SUCCESS"
+  mapped_obj["metadataStatus"] = "SUCCESS"
+  mapped_obj["locationError"] = ''
+  mapped_obj["metadataError"] = ''
   mapped_obj["durationSeconds"] = str(media_obj['contentParts'])
+  # mapped_obj["srcS3Key"]
+  # mapped_obj["source"]
+  mapped_obj["mimeType"] = 'migrated'
+  # mapped_obj["language"]
+  return mapped_obj
+
+
+def get_document_type(ext):
+  if ext=='pdf':
+    return "PDF"
+  elif ext=="vtt":
+    return "VTT"
+  elif ext=='ppt' or ext=='pptx':
+    return "PPT"
+  elif ext=='doc' or ext=='docx':
+    return "DOC"
+  elif ext=='json':
+    return "JSON"
+  elif ext=="XLS":
+    return "XLS"
+  return "UNDEFINED"
+
+
+def get_mapped_document_obj(mapped_obj, media_obj, bucket, s3key):
+  mapped_obj["key"] =s3key
+  mapped_obj['bucket'] = bucket
+  mapped_obj["type"] = 'DOCUMENT'
+  mapped_obj["subtype"] = get_document_type(s3key.split('.')[-1])
+  mapped_obj["sizeBytes"] = str(media_obj.get('size',0))
+  mapped_obj["numPages"] = str(media_obj['contentParts'])
+  mapped_obj["locationStatus"] = 'SUCCESS'
+  mapped_obj["metadataStatus"] = 'SUCCESS'
+  mapped_obj["locationError"] = ''
+  mapped_obj["metadataError"] = ''
+  mapped_obj["mimeType"] = '.'+s3key.split('.')[-1]
+  mapped_obj["language"] = ''
+  return mapped_obj
+
+
+
+def get_mapped_image_object(mapped_obj, media_obj, bucket, s3key):
+  mapped_obj["key"] = s3key
+  mapped_obj["bucket"] = bucket
+  mapped_obj["type"] = 'IMAGE'
+  mapped_obj["subtype"] = s3key.split('.')[-1]
+  mapped_obj["sizeBytes"] = str(media_obj.get('size',0))
+  mapped_obj["height"] = ''
+  mapped_obj["width"] = ''
   mapped_obj["locationStatus"] = 'SUCCESS'
   mapped_obj["metadataStatus"] = 'SUCCESS'
   mapped_obj["locationError"] = ''
   mapped_obj["metadataError"] = ''
   mapped_obj["mimeType"] = 'migrated'
+
+
+
+def get_mapped_catalogue_object(mapped_obj, media_obj, bucket, s3key):
+  mapped_obj["key"] = s3key
+  mapped_obj["bucket"] = bucket
+  mapped_obj["type"] = 'CATALOGUE'
+  mapped_obj["subtype"] = ''
+  mapped_obj["sizeBytes"] = ''
+  mapped_obj["numPages"] = media_obj.get('contentParts', 0)
+  mapped_obj["locationStatus"] = "SUCCESS"
+  mapped_obj["metadataStatus"] = "SUCCESS"
+  mapped_obj["locationError"] = ''
+  mapped_obj["metadataError"] = ''
+  mapped_obj["mimeType"] = ''
+
+
+def get_subtitle_media(mapped_obj, media_obj, bucket, s3key):
+  
+  mapped_obj["bucket"] = bucket
+  mapped_obj["key"] = s3key
+  mapped_obj["type"] = 'DOCUMENT'
+  mapped_obj["subtype"] = 'VTT'
+  mapped_obj["sizeBytes"] = '0'
+  mapped_obj["width"] = ''
+  mapped_obj["numPages"] = '1'
+  mapped_obj["locationStatus"] = 'SUCCESS'
+  mapped_obj["metadataStatus"] = 'SUCCESS'
+  mapped_obj["locationError"] = ''
+  mapped_obj["metadataError"] = ''
+  mapped_obj["mimeType"] = '.vtt'
+  return mapped_obj
+
+def get_transcription_media(mapped_obj, media_obj, bucket, s3key):
+  
+  mapped_obj["bucket"] =bucket
+  mapped_obj["key"] = s3key
+  mapped_obj["type"] = 'DOCUMENT'
+  mapped_obj["subtype"] = 'JSON'
+  mapped_obj["sizeBytes"] = '0'
+  mapped_obj["width"] = ''
+  mapped_obj["numPages"] = '1'
+  mapped_obj["locationStatus"] = 'SUCCESS'
+  mapped_obj["metadataStatus"] = 'SUCCESS'
+  mapped_obj["locationError"] = ''
+  mapped_obj["metadataError"] = ''
+  mapped_obj["mimeType"] = '.json'
   return mapped_obj
 
 
-def get_document_objects(mapped_obj, media_obj):
+def get_document_objects(mapped_obj, cb_obj, cdn):
+
   mapped_list = []
+  obj_id, media_obj = cb_obj['id'], cb_obj['ce']
 
   if 'original_path' in media_obj and media_obj['original_path'] is not None:
+    original_path = media_obj['original_path']
     mobj = copy.deepcopy(mapped_obj)
-    mapped_list.append(get_mapped_document_obj(mobj, media_obj, media_obj.get('origional_path')))
+    mapped_list.append(get_mapped_document_obj(mobj, media_obj, region_bucket[cdn], original_path))
+
+    if media_obj.get('uuid') or media_obj['docProcessor'] == 'BOX' or media_obj['docProcessor'] == 'HYBRID':
+      if media_obj['docProcessor'] == 'HTML_PDF_LAMBDA':
+        pdf = get_mapped_document_obj(copy.deepcopy(mapped_obj), media_obj, region_bucket[cdn], original_path + "/doc.pdf")
+        thumb = get_mapped_image_object(copy.deepcopy(mapped_obj), media_obj, croco_bucket[cdn], original_path + "/imagified/out_1.png")
+        mapped_list.append(pdf)
+        mapped_list.append(thumb)
+
+      if media_obj['docProcessor'] == 'CROCODOC' or media_obj['docProcessor'] == None:
+        uuid = media_obj.get('uuid','')
+        pdf = get_mapped_document_obj(copy.deepcopy(mapped_obj), media_obj,croco_bucket[cdn], uuid + "/doc.pdf")
+        thumb = get_mapped_image_object(copy.deepcopy(mapped_obj), media_obj, croco_bucket[cdn],  uuid + "/images/thumbnail-master-0.png")
+        mapped_list.append(pdf)
+        mapped_list.append(thumb)
+
+      else:
+        pdf = get_mapped_document_obj(copy.deepcopy(mapped_obj), media_obj, box_bucket[cdn], obj_id + "/doc.pdf")
+        thumb = get_mapped_image_object(copy.deepcopy(mapped_obj), media_obj, box_bucket[cdn],  obj_id + "/imagified/out_1.png")
+        mapped_list.append(pdf)
+        mapped_list.append(thumb)
+
+    # if media_obj.get('imagifiedStatus') == "IMAGIFIED_SUCCESS":
+    #   content_parts = media_obj.get('contentParts', 0)
+    #   catalogues_objs = get_mapped_catalogue_object(copy.deepcopy(mapped_obj), media_obj, region_bucket[cdn], original_path+'/imagified/out')
+    #   mapped_list.extend(catalogues_objs)
 
   return mapped_list
 
 
-def get_mapped_document_obj(mapped_obj, media_obj, s3key):
-  mapped_obj["key"] =s3key
-  mapped_obj["type"] = docs[media_obj['type']]
-  mapped_obj["subtype"] = ''
-  mapped_obj["sizeBytes"] = str(media_obj.get('size',0))
-  mapped_obj['uuid'] = media_obj.get('uuid', '')
-  mapped_obj["contentParts"] = str(media_obj['contentParts'])
-  mapped_obj["locationStatus"] = 'SUCCESS'
-  mapped_obj["metadataStatus"] = 'SUCCESS'
-  mapped_obj["locationError"] = ''
-  mapped_obj["metadataError"] = ''
-  mapped_obj["mimeType"] = 'migrated'
-  return mapped_obj
 
-
-def get_mapped_media_objects(media_obj):
-
+def get_mapped_media_objects(cb_obj):
+  media_obj = cb_obj['ce']
   cId = media_obj.get('companyId', "")
   comp_obj = companySettings.get(f'{cId}.settings')
   if comp_obj is None:
@@ -194,22 +339,21 @@ def get_mapped_media_objects(media_obj):
   mapped_obj["globalContextId"] = mapped_obj["id"]
   mapped_obj["source"] = 'content-engine-migration'
 
-  mapped_obj['bucket'] = region_bucket[cdnId]
   mapped_obj["region"] = region_cdn[cdnId]
   mapped_obj['name'] = media_obj.get('title', '')
 
   if docs[type] == 'AUDIO':
-    mapped_objs = get_audio_objects(mapped_obj, media_obj)
+    mapped_objs = get_audio_objects(mapped_obj, cb_obj, cdnId)
   else:
-    mapped_objs = get_document_objects(mapped_obj, media_obj)
+    mapped_objs = get_document_objects(mapped_obj, cb_obj, cdnId)
 
   return mapped_objs
 
 
-def get_create_requests(media_obj, user_id, tenant_id):
+def get_create_requests(cb_obj, user_id, tenant_id):
   docs=[]
   req_context = RequestContext(user_id=user_id, tenant_id=tenant_id)
-  mapped_docs = get_mapped_media_objects(media_obj)
+  mapped_docs = get_mapped_media_objects(cb_obj)
   for doc in mapped_docs:
     docs.append(getDoc(doc['id'], json.dumps(doc)))
   return CreateDocsRequest(request_context= req_context, collection_id=collections['infra_media'], doc=docs)
@@ -259,7 +403,7 @@ async def migrate_company(comp_id, medias):
       orgId = comp_obj["orgId"]
       company_id = ce_obj['companyId']
 
-      create_requests = get_create_requests(ce_obj, user_id, orgId)
+      create_requests = get_create_requests(media_obj, user_id, orgId)
       create_requests_list.append(create_requests)
 
 
@@ -332,6 +476,22 @@ def read_processed_companies():
 #       csv_writer.writerow([cId, json.dumps(cObj)])
 
 
+
+
+def load_companies_to_process():
+  import glob
+  path = get_dir("downloaded")
+  files = glob.glob(path+'/*.csv')
+  comp = []
+  for fl in files:
+    f = fl.split('/')[-1]
+    cmp = f.split('.')[0].strip('media_to_migrate_')
+    comp.append(cmp)
+  return comp
+
+
+
+
 def load_company_settings():
   global companySettings
 
@@ -357,7 +517,7 @@ def read_company_settings_from_db():
 
 
 
-async def migrate_media_by_company():
+async def migrate_media_by_company(companies_list=[]):
   global processed_companies
   companies_list = processed_companies
   tasks=[]
@@ -381,33 +541,30 @@ async def migrate_media_by_company():
 failed_db_reads = []
 cnt=0
 
-async def read_media_by_company(batch_list):
+async def read_media_by_company(comp_id):
   global processed_companies
-  media_records = {}
+  media_records = []
   global cnt
   try:
     medias = N1QLRequest(
-      _N1QLQuery('SELECT META().id, * FROM ce WHERE companyId in $1', batch_list), cb)
+      _N1QLQuery('SELECT META().id, * FROM ce WHERE companyId=$1', comp_id), cb)
     for media_obj in medias:
       if media_obj['ce'].get('type') not in mediaTypes:
         continue
       cid = media_obj['ce']['companyId']
-      media_records.setdefault(cid, [])
-      media_records[cid].append([json.dumps(media_obj)])
+      media_records.append([json.dumps(media_obj)])
 
   except Exception as e:
-    failed_db_reads.extend(batch_list)
+    failed_db_reads.extend(comp_id)
     return
 
-  for comp_id in media_records:
-    records = media_records[comp_id]
-    path = get_dir('downloaded')
-    file = os.path.join(path, f'media_to_migrate_{comp_id}.csv')
-    with open(file, 'w') as f:
-      csv_writer = csv.writer(f)
-      csv_writer.writerows(records)
+  path = get_dir('downloaded')
+  file = os.path.join(path, f'media_to_migrate_{comp_id}.csv')
+  with open(file, 'w') as f:
+    csv_writer = csv.writer(f)
+    csv_writer.writerows(media_records)
 
-  processed_companies.extend(list(media_records.keys()))
+  processed_companies.append(comp_id)
 
 
 
@@ -424,14 +581,9 @@ def get_companies_by_type(comp_type = 'ALL'):
 
 
 
-async def read_batch_to_migrate_from_db(comp_type):
+async def read_batch_to_migrate_from_db(comp_list):
 
-  companies_list = get_companies_by_type()
-
-  # companies_list=companies_list[:2]
-  batch = 10
-  sz = len(companies_list)
-  await asyncio.gather(*[read_media_by_company(companies_list[i*batch:(i+1)*batch]) for i in range((sz//batch)+1)])
+  await asyncio.gather(*[read_media_by_company(cmp) for cmp in comp_list])
 
   # for comp in companies_list[:20]:
   #   read_media_by_company(comp)
@@ -451,9 +603,13 @@ async def main():
   read_company_settings_from_db()
   load_company_settings()
 
-  task = asyncio.create_task(read_batch_to_migrate_from_db())
+
+  comp_list = get_companies_by_type()
+  comp_list = comp_list[:2]
+  task = asyncio.create_task(read_batch_to_migrate_from_db(comp_list))
   await task
 
+  # load_companies_to_process()
   mig_task = asyncio.create_task(migrate_media_by_company())
   await mig_task
 
@@ -468,7 +624,3 @@ async def main():
 if __name__ == '__main__':
   # main()
   asyncio.run(main())
-
-
-
-
