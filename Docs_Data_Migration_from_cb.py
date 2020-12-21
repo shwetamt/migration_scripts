@@ -7,10 +7,12 @@ import datetime, _random
 import asyncio
 import json
 import os
+import logging
 from pathlib import Path
 from common.common_messages_pb2 import RequestContext
 from tickleDb.document_pb2 import ModifyDocsRequest, CreateDocsRequest, Doc
 from tickleDb.document_pb2_grpc import DocServiceStub
+import shutil
 
 TICKLE_DB_URL = 'tickledbdocservice.internal-grpc.pikachu.mindtickle.com:80'
 channel = grpc.insecure_channel(TICKLE_DB_URL)
@@ -28,6 +30,9 @@ docs = {90: 'AUDIO', 93: 'PDF', 94: 'PPT', 95: 'WORD', 96: 'XLS', 0: 'INVALID'}
 mediaTypes = list(docs.keys())
 
 base_name = 'documents_media'
+
+failed_reads = open(f'failed_db_reads.csv', 'a')
+failed_db_writer = csv.writer(failed_reads)
 
 
 def get_dir(prefix):
@@ -126,13 +131,13 @@ def get_audio_objects(mapped_obj, cb_obj, cdn):
     mapped_list = []
     media_obj = cb_obj['ce']
 
-    if 'original_path' in media_obj and media_obj['original_path'] is not None:
+    if 'original_path' in media_obj and media_obj['original_path'] is not None:  #throw exception - error
         mobj = copy.deepcopy(mapped_obj)
         mapped_list.append(get_mapped_audio_obj(mobj, media_obj, region_bucket[cdn], media_obj.get('origional_path')))
 
     if 'mp3Path' in media_obj and media_obj['mp3Path'] is not None:
         mobj = copy.deepcopy(mapped_obj)
-        mapped_list.append(get_mapped_audio_obj(mobj, media_obj, region_bucket[cdn], media_obj.get('mp3Path')))
+        mapped_list.append(get_mapped_audio_obj(mobj, media_obj, streaming_bucket[cdn], media_obj.get('mp3Path')))
 
     if 'vttSubtitlePath' in media_obj and media_obj['vttSubtitlePath'] is not None:
         mobj = copy.deepcopy(mapped_obj)
@@ -236,7 +241,7 @@ def get_mapped_catalogue_object(mapped_obj, media_obj, bucket, s3key):
     mapped_obj["metadataStatus"] = "SUCCESS"
     mapped_obj["locationError"] = ''
     mapped_obj["metadataError"] = ''
-    mapped_obj["mimeType"] = ''
+    mapped_obj["mimeType"] = 'CATALOGUE'
     return mapped_obj
 
 
@@ -307,10 +312,10 @@ def get_document_objects(mapped_obj, cb_obj, cdn):
                 mapped_list.append(pdf)
                 mapped_list.append(thumb)
 
-        # if media_obj.get('imagifiedStatus') == "IMAGIFIED_SUCCESS":
-        #   content_parts = media_obj.get('contentParts', 0)
-        #   catalogues_objs = get_mapped_catalogue_object(copy.deepcopy(mapped_obj), media_obj, region_bucket[cdn], original_path+'/imagified/out')
-        #   mapped_list.extend(catalogues_objs)
+        if media_obj.get('imagifiedStatus') == "IMAGIFIED_SUCCESS":
+          content_parts = media_obj.get('contentParts', 0)
+          catalogues_objs = [get_mapped_catalogue_object(copy.deepcopy(mapped_obj), media_obj, region_bucket[cdn], f'{original_path}/imagified/out_{i+1}') for i in range(content_parts)]
+          mapped_list.extend(catalogues_objs)
 
     return mapped_list
 
@@ -358,6 +363,7 @@ def get_create_requests(cb_obj, user_id, tenant_id):
     return CreateDocsRequest(request_context=req_context, collection_id=collections['infra_media'], doc=docs)
 
 
+
 # def migrate_media(compType):
 #   processed_media = set()
 #   failed_media = set()
@@ -383,19 +389,25 @@ def get_create_requests(cb_obj, user_id, tenant_id):
 #         failed_media.add(obj_id)
 
 
-async def migrate_company(comp_id, medias):
-    src = get_dir("downloaded")
-    dest = get_dir("migrated")
+async def migrate_company(comp_id):
+
+    failed_media = get_dir("failed")
+    migrated_media = get_dir("migrated")
+    downloaded_media = get_dir("downloaded")
     mig_except = 0
-    sz = len(medias)
-    for i in range((sz // 10) + 1):
-        batch_list = medias[i * 10:(i + 1) * 10]
-        try:
-            for media_obj in batch_list:
-                create_requests_list = []
-                type = media_obj['ce'].get('type', 0)
-                if type not in mediaTypes:
-                    continue
+
+    with open(f'{migrated_media}/migrated_{comp_id}.csv', 'a') as f1, open(f'{failed_media}/failed_{comp_id}.csv', 'a') as f2, open(f'{downloaded_media}/downloaded_{comp_id}.csv') as f3:
+
+        mig_writer = csv.writer(f1)
+        failed_writer = csv.writer(f2)
+        comp_reader = csv.reader(f3)
+        create_requests_list = []
+        medias = []
+
+        for row in comp_reader:
+            raw_obj = row[0]
+            media_obj = json.loads(row[0])
+            try:
                 ce_obj = media_obj['ce']
                 cId = comp_id
                 comp_obj = companySettings.get(f'{cId}.settings')
@@ -404,30 +416,64 @@ async def migrate_company(comp_id, medias):
                 user_id = ce_obj.get('uploadedById', '_default_migrated')
                 orgId = comp_obj["orgId"]
                 company_id = ce_obj['companyId']
-
                 create_requests = get_create_requests(media_obj, user_id, orgId)
-                create_requests_list.append(create_requests)
 
-                # if len(create_requests_list) > 0:
-                #     modifyDocsRequest = ModifyDocsRequest(
-                #         request_context=RequestContext(user_id=user_id, tenant_id=orgId),
-                #         create_docs_request=batch_list)
-                #     resp = stub.ModifyDocs(modifyDocsRequest)
-                #     if resp:
-                #         processed_companies.add(media_obj['id'])
-                #     else:
-                #         raise Exception("create media failed")
+            except Exception as e:
+                failed_writer.writerow([raw_obj])
+                logging.debug(f'Exception occurred while migrating company {comp_id} - media - {media_obj}')
+                mig_except = 1
+                continue
 
-        except Exception as e:
-            failed_companies.add(comp_id)
-            mig_except=1
+            create_requests_list.append(create_requests)
+            medias.append(raw_obj)
 
-        with open(f'{dest}/migrated_{comp_id}.csv', 'a') as fl:
-            csv_writer = csv.writer(fl)
-            csv_writer.writerows([[json.dumps(obj)] for obj in batch_list])
+            if len(create_requests_list) == 10:
+                try:
+                    pass
+                    # modifyDocsRequest = ModifyDocsRequest(
+                    #     request_context=RequestContext(user_id=user_id, tenant_id=orgId),
+                    #     create_docs_request=create_requests_list)
+                    # resp = stub.ModifyDocs(modifyDocsRequest)
+                    # if resp:
+                    #     processed_companies.add(media_obj['id'])
+                    # else:
+                    #     raise Exception("create media failed")
+                    mig_writer.writerows([[obj] for obj in medias])
 
-    if mig_except==0 and os.path.exists(f'{src}/media_to_migrate_{comp_id}.csv'):
-        os.remove(f'{src}/media_to_migrate_{comp_id}.csv')
+                except Exception as e:
+                    failed_writer.writerows([[obj] for obj in medias])
+                    logging.debug(f'create infra media request failed for company {comp_id} - batch - {medias}')
+                    mig_except=1
+                    continue
+                create_requests_list = []
+                medias = []
+
+        if len(create_requests_list)>0:
+            try:
+                pass
+                # modifyDocsRequest = ModifyDocsRequest(
+                #     request_context=RequestContext(user_id=user_id, tenant_id=orgId),
+                #     create_docs_request=create_requests_list)
+                # resp = stub.ModifyDocs(modifyDocsRequest)
+                # if resp:
+                #     processed_companies.add(media_obj['id'])
+                # else:
+                #     raise Exception("create media failed")
+                mig_writer.writerows([[obj] for obj in medias])
+
+            except Exception as e:
+                failed_writer.writerows([[obj] for obj in medias])
+                logging.debug(f'create infra media request failed for company {comp_id} - batch - {medias}')
+                mig_except = 1
+
+
+    if mig_except==0 and os.path.exists(f'{failed_media}/failed_{comp_id}.csv'):
+        os.remove(f'{failed_media}/failed_{comp_id}.csv')
+
+    # if os.path.exists(f'{downloaded_media}/downloaded_{comp_id}.csv'):
+    #     os.remove(f'{downloaded_media}/downloaded_{comp_id}.csv')
+
+
 
 
 # async def companies_migration(type='QA'):
@@ -436,6 +482,7 @@ async def migrate_company(comp_id, medias):
 #     # for row in csv_reader:
 #     #   migrate_company(row[0], type)
 #     await asyncio.gather(*[migrate_company(cmp[0], type) for cmp in csv_reader])
+
 
 
 def read_processed_companies():
@@ -485,7 +532,7 @@ def load_companies_to_process():
     comp = []
     for fl in files:
         f = fl.split('/')[-1]
-        cmp = f.split('.')[0].strip('media_to_migrate_')
+        cmp = f.split('.')[0].strip('downloaded_')
         comp.append(cmp)
     return comp
 
@@ -504,6 +551,8 @@ def read_company_settings_from_db():
     company_settings = {}
     companies_by_types = N1QLRequest(_N1QLQuery('SELECT META().id,* FROM ce WHERE type=$1', 3), cb)
     for comp_obj in companies_by_types:
+        if comp_obj['ce'].get('companyState') != 'ACTIVE':
+            continue
         company_settings[comp_obj['id']] = comp_obj['ce']
 
     with open('company_settings.csv', 'w') as f:
@@ -512,61 +561,50 @@ def read_company_settings_from_db():
             csv_writer.writerow([cId, json.dumps(cObj)])
 
 
+
 async def migrate_media_by_company(companies_list=[]):
     # global processed_companies
     # companies_list = processed_companies
     tasks = []
-    path = get_dir('downloaded')
-
     for comp_id in companies_list:
-        medias = []
-        file = os.path.join(path, f'media_to_migrate_{comp_id}.csv')
-        with open(file) as f:
-            csv_reader = csv.reader(f)
-            for row in csv_reader:
-                media_obj = json.loads(row[0])
-                medias.append(media_obj)
-        # migrate_company(comp_id, medias)
-        tasks.append(migrate_company(comp_id, medias))
-
+        tasks.append(migrate_company(comp_id))
     await asyncio.gather(*tasks)
 
 
 failed_db_reads = []
-cnt = 0
 
 
-async def read_media_by_company(comp_id):
+async def read_media_by_company(comp_id, offset=0):
     global processed_companies
     path = get_dir('downloaded')
-    file = os.path.join(path, f'media_to_migrate_{comp_id}.csv')
-    media_records = []
-    media_cnt = N1QLRequest(
-        _N1QLQuery('SELECT count(*) as count FROM ce WHERE companyId=$1', comp_id), cb)
-    cnt_list = list(media_cnt)
-    if len(cnt_list) == 0:
-        return
-    media_cnt = cnt_list[0].get('count', 0)
+    file = os.path.join(path, f'downloaded_{comp_id}.csv')
+    status = [0, 5 ,6 ,22]
     thresh = 1000
-    for i in range((media_cnt // thresh) + 1):
-        offset = i * thresh
-        limit = (i + 1) * thresh
-        try:
-            medias = N1QLRequest(
-                _N1QLQuery('SELECT META().id, * FROM ce WHERE companyId=$1 LIMIT $2 OFFSET $3', comp_id, limit, offset),
-                cb)
-            for media_obj in medias:
-                if media_obj['ce'].get('type') not in mediaTypes:
-                    continue
-                media_records.append([json.dumps(media_obj)])
+    flag = True
+    with open(file, 'a') as f:
+        csv_writer = csv.writer(f)
+        while True:
+            limit = offset+thresh
+            media_records = []
+            try:
+                medias = N1QLRequest(
+                    _N1QLQuery(
+                        'SELECT META().id, * FROM ce WHERE companyId=$1 and type in $2 order by id LIMIT $3 OFFSET $4',
+                        comp_id, mediaTypes, limit,
+                        offset), cb)
+                if medias.metrics.get('resultCount', 0) == 0 :
+                    break
+                for media_obj in medias:
+                    if media_obj['ce'].get('status', -1) not in status:
+                        continue
+                    media_records.append([json.dumps(media_obj)])
 
-        except Exception as e:
-            failed_db_reads.append((comp_id, offset, limit))
-            return
+            except Exception as e:
+                failed_db_writer.writerow([comp_id, offset])
+                return
 
-        with open(file, 'a') as f:
-            csv_writer = csv.writer(f)
             csv_writer.writerows(media_records)
+            offset = limit
 
 
 def get_companies_by_type(comp_type='ALL'):
@@ -603,9 +641,14 @@ async def main():
     task = asyncio.create_task(read_batch_to_migrate_from_db(comp_list))
     await task
     #
+
     comp = load_companies_to_process()
     mig_task = asyncio.create_task(migrate_media_by_company(comp))
     await mig_task
+
+    global failed_reads
+    failed_reads.close()
+    pass
 
     # read_processed_companies()
 
