@@ -120,7 +120,7 @@ def get_media_object(cb_obj, comp_obj, media_type = ''):
     mapped_obj["globalContextId"] = mapped_obj["id"]
     mapped_obj["orgId"] = orgId
     mapped_obj["companyId"] = company_id
-    mapped_obj["tenantId"] = '1234'+orgId
+    mapped_obj["tenantId"] = orgId
     mapped_obj["authorizer"] = user_id
     mapped_obj["source"] = 'content-engine-migration'
     mapped_obj["region"] = region_cdn[cdnId]
@@ -198,8 +198,8 @@ def get_mapped_audio_obj(mapped_obj, media_obj, bucket, s3key, cdn):
     comp_id = mapped_obj['companyId']
     org_id = mapped_obj['orgId']
     id = mapped_obj['id']
-    file = mapped_obj['name']
-    new_key = f'{org_id}/{comp_id}/{id}_{file}'
+    file = s3key.split['/'][-1]
+    new_key = f'{org_id}/{comp_id}/{id}/{file}'
     new_bucket = picasso_bucket[cdn]
     path_writer.writerow([bucket, s3key, new_bucket, new_key])
     mapped_obj['original_path'] = s3key
@@ -237,7 +237,7 @@ def get_document_type(path):
         return "doc"
     elif ext == 'json':
         return "json"
-    elif ext == "XLS":
+    elif ext == "xlsx" or ext == 'xls':
         return "xls"
     return "UNDEFINED"
 
@@ -254,8 +254,8 @@ def get_mapped_document_obj(mapped_obj, media_obj, bucket, s3key, cdn):
     comp_id = mapped_obj['companyId']
     org_id = mapped_obj['orgId']
     id = mapped_obj['id']
-    file = mapped_obj['name']
-    new_key = f'{org_id}/{comp_id}/{id}_{file}'
+    file = s3key.split['/'][-1]
+    new_key = f'{org_id}/{comp_id}/{id}/{file}'
     new_bucket = picasso_bucket[cdn]
     path_writer.writerow([bucket, s3key, new_bucket, new_key])
     mapped_obj['original_path'] = s3key
@@ -280,8 +280,8 @@ def get_mapped_image_object(mapped_obj, media_obj, bucket, s3key, cdn):
     comp_id = mapped_obj['companyId']
     org_id = mapped_obj['orgId']
     id = mapped_obj['id']
-    file = mapped_obj['name']
-    new_key = f'{org_id}/{comp_id}/{id}_{file}'
+    file = s3key.split['/'][-1]
+    new_key = f'{org_id}/{comp_id}/{id}/{file}'
     new_bucket = picasso_bucket[cdn]
     path_writer.writerow([bucket, s3key, new_bucket, new_key])
     mapped_obj['original_path'] = s3key
@@ -305,8 +305,8 @@ def get_mapped_catalogue_object(mapped_obj, media_obj, bucket, s3key, cdn):
     comp_id = mapped_obj['companyId']
     org_id = mapped_obj['orgId']
     id = mapped_obj['id']
-    file = mapped_obj['name']
-    new_key = f'{org_id}/{comp_id}/{id}_{file}'
+    file = s3key.split['/'][-1]
+    new_key = f'{org_id}/{comp_id}/{id}/out_'+ '{image_num}.png'
     new_bucket = picasso_bucket[cdn]
     path_writer.writerow([bucket, s3key, new_bucket, new_key])
     mapped_obj['original_path'] = s3key
@@ -330,8 +330,8 @@ def get_subtitle_media(mapped_obj, media_obj, bucket, s3key, cdn):
     comp_id = mapped_obj['companyId']
     org_id = mapped_obj['orgId']
     id = mapped_obj['id']
-    file = mapped_obj['name']
-    new_key = f'{org_id}/{comp_id}/{id}_{file}'
+    file = s3key.split['/'][-1]
+    new_key = f'{org_id}/{comp_id}/{id}/{file}'
     new_bucket = picasso_bucket[cdn]
     path_writer.writerow([bucket, s3key, new_bucket, new_key])
     mapped_obj['original_path'] = s3key
@@ -354,8 +354,8 @@ def get_transcription_media(mapped_obj, media_obj, bucket, s3key, cdn):
     comp_id = mapped_obj['companyId']
     org_id = mapped_obj['orgId']
     id = mapped_obj['id']
-    file = mapped_obj['name']
-    new_key = f'{org_id}/{comp_id}/{id}_{file}'
+    file = s3key.split['/'][-1]
+    new_key = f'{org_id}/{comp_id}/{id}/{file}'
     new_bucket = picasso_bucket[cdn]
     path_writer.writerow([bucket, s3key, new_bucket, new_key])
     mapped_obj['original_path'] = s3key
@@ -751,10 +751,10 @@ async def main():
     load_company_settings()
 
     comp_list = get_companies_by_type('QA')
-    comp_list = comp_list[40:41]
+    comp_list = comp_list[43:45]
 
     global sub_dir, failed_db_writer, path_writer
-    sub_dir = 'Test200000'
+    sub_dir = 'Testing11'
     dir_path = get_dir('', sub_dir)
     failed_reads = open(f'{dir_path}/docs_failed_db_reads.csv','a')
     failed_db_writer=csv.writer(failed_reads)

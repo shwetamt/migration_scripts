@@ -108,7 +108,7 @@ def get_representation_properties_media_create_requests(representation_propertie
 def get_representation_name(infra_media_type):
 
   if infra_media_type == 'IMAGE':
-    return 'THUMBNAIL_LARGE'
+    return 'IMAGE'
   elif infra_media_type == 'VTT':
     return 'AUTO_SUBTITLE'
   elif infra_media_type == 'JSON':
@@ -116,15 +116,15 @@ def get_representation_name(infra_media_type):
   elif infra_media_type == 'AUDIO':
     return 'MP3'
   elif infra_media_type == 'PDF':
-      return 'PDF_HIGH_RES'
+      return 'PDF'
   elif infra_media_type == 'DOC':
-      return 'PDF_HIGH_RES'
+      return 'PDF'
   elif infra_media_type == 'PPT':
-      return 'PDF_HIGH_RES'
+      return 'PDF'
   elif infra_media_type == 'XLS':
-      return 'PDF_HIGH_RES'
+      return 'PDF'
   if infra_media_type == 'CATALOGUE':
-    return 'UNDEFINED'
+    return 'IMAGE'
   else:
       return 'UNDEFINED'
 
@@ -149,7 +149,7 @@ def get_base_media(id, orgId, companyId, userId):
   myMap["id"] = id
   myMap["orgId"] = orgId
   myMap["companyId"] = companyId
-  myMap["tenantId"] = '1234'+orgId
+  myMap["tenantId"] = orgId
   myMap["authorizer"] = userId
   myMap["globalContextId"] = myMap["id"]
   return myMap
@@ -235,8 +235,6 @@ async def map_company_data(comp_id):
                 else:
                     picasso_type = get_picasso_type(type)
                 picasso_obj = get_media(mediaId, org_id, company_id, uploaded_by_id, original_media['id'], original_media['name'], picasso_type)
-                representation_media_object = {}
-                representation_property_object = {}
                 sub_medias = media_obj['sub_media']
                 repr_list=[]
                 repr_prop_list=[]
@@ -251,10 +249,10 @@ async def map_company_data(comp_id):
                         division = 'MP3'
                     elif media['type'] == 'DOCUMENT':
                         type_infra = media['subtype']
-                        division = 'RAW'
+                        division = get_representation_name(type_infra)
                     elif media['type'] == 'CATALOGUE':
                         type_infra = 'CATALOGUE'
-                        division = ''
+                        division = 'IMAGE'
 
                     representation_id = generate_representation_id(get_representation_name(type_infra), mediaId)
                     representation_media_object = get_representation(representation_id, org_id, company_id, uploaded_by_id, get_representation_name(type_infra), mediaId)
@@ -358,7 +356,7 @@ async def map_media_data_by_company(companies_list=[]):
 async def main():
 
     global sub_dir
-    sub_dir = 'Test200000'
+    sub_dir = 'Testing11'
     comp_list = load_companies_for_mapping()
     map_task = asyncio.create_task(map_media_data_by_company(comp_list))
     await map_task
