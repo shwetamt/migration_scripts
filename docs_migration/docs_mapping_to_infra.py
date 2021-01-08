@@ -393,13 +393,6 @@ def get_document_objects(cb_obj):
     mapped_dict['original_media'].append(get_mapped_document_obj(get_media_object(cb_obj, comp_obj, 'DOCUMENT'), media_obj, type, region_bucket[cdn], original_path, cdn))
 
     if media_obj.get('uuid') or media_obj.get('docProcessor') == 'BOX' or media_obj.get('docProcessor') == 'HYBRID':
-        if media_obj.get('docProcessor') == 'HTML_PDF_LAMBDA':
-            pdf = get_mapped_document_obj(get_media_object(cb_obj, comp_obj, 'DOCUMENT'), media_obj, 'PDF', region_bucket[cdn],
-                                          original_path + "/doc.pdf", cdn)
-            thumb = get_mapped_image_object(get_media_object(cb_obj, comp_obj, 'IMAGE'), media_obj, croco_bucket[cdn],
-                                            original_path + "/imagified/out_1.png", cdn)
-            mapped_dict['sub_media'].append(pdf)
-            mapped_dict['sub_media'].append(thumb)
 
         if media_obj.get('docProcessor') == 'CROCODOC' or media_obj.get('docProcessor') is None:
             uuid = media_obj.get('uuid', '')
@@ -414,9 +407,18 @@ def get_document_objects(cb_obj):
             pdf = get_mapped_document_obj(get_media_object(cb_obj, comp_obj, 'DOCUMENT'), media_obj, 'PDF',box_bucket[cdn],
                                           obj_id + "/doc.pdf", cdn)
             thumb = get_mapped_image_object(get_media_object(cb_obj, comp_obj, 'IMAGE'), media_obj, box_bucket[cdn],
-                                            obj_id + "/imagified/out_1.png", cdn)
+                                            obj_id + "/images/thumbnail-master-0.png", cdn)
             mapped_dict['sub_media'].append(pdf)
             mapped_dict['sub_media'].append(thumb)
+
+    if media_obj.get('docProcessor') == 'HTML_PDF_LAMBDA':
+        pdf = get_mapped_document_obj(get_media_object(cb_obj, comp_obj, 'DOCUMENT'), media_obj, 'PDF',
+                                      region_bucket[cdn],
+                                      original_path + "/doc.pdf", cdn)
+        thumb = get_mapped_image_object(get_media_object(cb_obj, comp_obj, 'IMAGE'), media_obj, croco_bucket[cdn],
+                                        original_path + "/imagified/out_1.png", cdn)
+        mapped_dict['sub_media'].append(pdf)
+        mapped_dict['sub_media'].append(thumb)
 
     if media_obj.get('imagifiedStatus') == "IMAGIFIED_SUCCESS":
         # content_parts = media_obj.get('contentParts', 0)
@@ -472,8 +474,10 @@ def get_create_requests(mapped_docs, user_id, tenant_id):
 
 def get_already_processed_media(comp_id):
     already_processed = set()
-    migrated_media = get_dir("migrated", sub_dir)
-    with open(f'{migrated_media}/migrated_{comp_id}.csv') as f:
+    migrated_media = get_dir("migrated_infra", sub_dir)
+    if not os.path.exists(f'{migrated_media}/migrated_infra_{comp_id}.csv'):
+        return already_processed
+    with open(f'{migrated_media}/migrated_infra_{comp_id}.csv') as f:
         reader = csv.reader(f)
         for row in reader:
             obj=json.loads(row[0])
@@ -491,12 +495,12 @@ async def migrate_company(comp_id):
     dir = get_dir('object_paths', sub_dir)
     obj_paths_file = open(f'{dir}/object_paths_{comp_id}.csv', 'a')
     path_writer = csv.writer(obj_paths_file)
-    failed_media = get_dir("failed", sub_dir)
-    migrated_media = get_dir("migrated", sub_dir)
+    failed_media = get_dir("failed_infra", sub_dir)
+    migrated_media = get_dir("migrated_infra", sub_dir)
     mig_except = 0
     already_procesed = get_already_processed_media(comp_id)
 
-    with open(f'{migrated_media}/migrated_{comp_id}.csv', 'a') as f1, open(f'{failed_media}/failed_{comp_id}.csv', 'a') as f2, open(f'{downloaded_media}/downloaded_{comp_id}.csv') as f3:
+    with open(f'{migrated_media}/migrated_infra_{comp_id}.csv', 'a') as f1, open(f'{failed_media}/failed_infra_{comp_id}.csv', 'w') as f2, open(f'{downloaded_media}/downloaded_{comp_id}.csv') as f3:
 
         mig_writer = csv.writer(f1)
         failed_writer = csv.writer(f2)
@@ -579,8 +583,8 @@ async def migrate_company(comp_id):
                 mig_except = 1
 
     obj_paths_file.close()
-    if mig_except==0 and os.path.exists(f'{failed_media}/failed_{comp_id}.csv'):
-        os.remove(f'{failed_media}/failed_{comp_id}.csv')
+    if mig_except==0 and os.path.exists(f'{failed_media}/failed_infra_{comp_id}.csv'):
+        os.remove(f'{failed_media}/failed_infra_{comp_id}.csv')
 
     print(f'Migration completed for company - {comp_id}')
 
@@ -673,7 +677,7 @@ async def migrate_media_by_company(companies_list=[]):
     for comp_id in companies_list:
         if companySettings.get(f'{comp_id}.settings') is None:
             continue
-        companySettings[f'{comp_id}.settings']['orgId'] += '6654321'
+        companySettings[f'{comp_id}.settings']['orgId'] += '3354321'
         tasks.append(migrate_company(comp_id))
     await asyncio.gather(*tasks)
     print(f'Migration completed')
@@ -702,18 +706,18 @@ def get_companies_by_type(comp_type='ALL'):
 #   # res = await asyncio.gather(*[data_mig(comp_type) for comp_type in companyTypes])
 
 
-async def main():
+async def map_medias_to_infra(comp_list, dir):
     # read_company_settings_from_db()
     load_company_settings()
 
     #comp_list = ['595584933866000779']
 
     global sub_dir, failed_db_writer, path_writer
-    sub_dir = 'Testing0'
+    sub_dir = dir
 
-    comp = load_companies_to_process()
+    # comp_list = load_companies_to_process()
 
-    mig_task = asyncio.create_task(migrate_media_by_company(comp))
+    mig_task = asyncio.create_task(migrate_media_by_company(comp_list))
     await mig_task
     pass
 
@@ -724,6 +728,6 @@ async def main():
     # write_failed_migrations(comp_type)
 
 
-if __name__ == '__main__':
-    # main()
-    asyncio.run(main())
+# if __name__ == '__main__':
+#     # main()
+#     asyncio.run(map_medias_to_infra())

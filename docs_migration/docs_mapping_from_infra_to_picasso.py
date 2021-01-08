@@ -124,7 +124,7 @@ def get_representation_name(infra_media_type):
   elif infra_media_type == 'XLS':
       return 'XLS'
   if infra_media_type == 'CATALOGUE':
-    return 'CATALOGUE'
+    return 'IMAGE'
   else:
       return 'UNDEFINED'
 
@@ -200,10 +200,10 @@ def get_picasso_type(media_type):
 
 def get_already_processed_media(comp_id):
     already_processed = set()
-    successful_mapping = get_dir("successful_mapping", sub_dir)
-    if not os.path.exists(f'{successful_mapping}/successful_mapping_{comp_id}.csv'):
+    successful_mapping = get_dir("successful_picasso_mapping", sub_dir)
+    if not os.path.exists(f'{successful_mapping}/successful_picasso_mapping_{comp_id}.csv'):
         return set()
-    with open(f'{successful_mapping}/successful_mapping_{comp_id}.csv') as f:
+    with open(f'{successful_mapping}/successful_picasso_mapping_{comp_id}.csv') as f:
         reader = csv.reader(f)
         for row in reader:
             obj=json.loads(row[0])
@@ -214,16 +214,16 @@ def get_already_processed_media(comp_id):
 
 async def map_company_data(comp_id):
     print(f'Start mapping company media for company - {comp_id}')
-    migrated_media = get_dir("migrated", sub_dir)
-    if not os.path.exists(f'{migrated_media}/migrated_{comp_id}.csv'):
+    migrated_media = get_dir("migrated_infra", sub_dir)
+    if not os.path.exists(f'{migrated_media}/migrated_infra_{comp_id}.csv'):
         print(f'media data does not exists for company - {comp_id}')
         return
-    failed_mapping = get_dir("failed_mapping", sub_dir)
-    successful_mapping = get_dir("successful_mapping", sub_dir)
+    failed_mapping = get_dir("failed_picasso_mapping", sub_dir)
+    successful_mapping = get_dir("successful_picasso_mapping", sub_dir)
     mig_except = 0
     already_processed = get_already_processed_media(comp_id)
 
-    with open(f'{successful_mapping}/successful_mapping_{comp_id}.csv', 'a') as f1, open(f'{failed_mapping}/failed_mapping_{comp_id}.csv','a') as f2, open(f'{migrated_media}/migrated_{comp_id}.csv') as f3:
+    with open(f'{successful_mapping}/successful_picasso_mapping_{comp_id}.csv', 'a') as f1, open(f'{failed_mapping}/failed_picasso_mapping_{comp_id}.csv','w') as f2, open(f'{migrated_media}/migrated_infra_{comp_id}.csv') as f3:
 
         success_writer = csv.writer(f1)
         failed_writer = csv.writer(f2)
@@ -353,8 +353,8 @@ async def map_company_data(comp_id):
                 print(f'create infra media request failed for company {comp_id} - batch - {medias}, Exception - {e}')
                 mig_except = 1
 
-    if mig_except == 0 and os.path.exists(f'{failed_mapping}/failed_mapping_{comp_id}.csv'):
-        os.remove(f'{failed_mapping}/failed_mapping_{comp_id}.csv')
+    if mig_except == 0 and os.path.exists(f'{failed_mapping}/failed_picasso_mapping_{comp_id}.csv'):
+        os.remove(f'{failed_mapping}/failed_picasso_mapping_{comp_id}.csv')
     print(f'Migration completed for company - {comp_id}')
 
 
@@ -370,11 +370,11 @@ async def map_media_data_by_company(companies_list=[]):
 
 
 
-async def main():
+async def map_medias_from_infra_to_picasso(comp_list , dir):
 
     global sub_dir
-    sub_dir = 'Testing0'
-    comp_list = load_companies_for_mapping()
+    sub_dir = dir
+    # comp_list = load_companies_for_mapping()
     map_task = asyncio.create_task(map_media_data_by_company(comp_list))
     await map_task
 
@@ -382,6 +382,6 @@ async def main():
 
 
 
-if __name__ == '__main__':
-    # main()
-    asyncio.run(main())
+# if __name__ == '__main__':
+#     # main()
+#     asyncio.run(map_medias_from_infra_to_picasso())

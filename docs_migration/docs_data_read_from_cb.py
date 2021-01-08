@@ -7,12 +7,7 @@ import datetime, _random
 import asyncio
 import json
 import os
-import logging
-from pathlib import Path
-from common.common_messages_pb2 import RequestContext
-from tickleDb.document_pb2 import ModifyDocsRequest, CreateDocsRequest, Doc
 from tickleDb.document_pb2_grpc import DocServiceStub
-import shutil
 
 TICKLE_DB_URL = 'tickledbdocservice.internal-grpc.titos.mindtickle.com:80'
 channel = grpc.insecure_channel(TICKLE_DB_URL)
@@ -175,17 +170,39 @@ def read_company_settings_from_db():
 
 failed_db_reads = []
 
+def get_failed_cb_reads_companies():
+    comp=set()
+    dir_path = get_dir('', sub_dir)
+    failed_reads = f'{dir_path}/failed_db_reads.csv'
+    if not os.path.exists(failed_reads):
+        return set()
+    with open(failed_reads) as f:
+        reader = csv.reader(f)
+        for row in reader:
+            comp.add(row[0])
+    return comp
 
-async def read_media_by_company(comp_id, offset=0):
+
+def get_offset(file):
+    cnt=0
+    with open(file) as f:
+        reader = csv.reader(f)
+        for row in reader:
+            cnt+=1
+    return cnt
+
+
+def read_media_by_company(comp_id, offset=0):
     global processed_companies
     print(f'Reading company data for company - {comp_id}')
     path = get_dir('downloaded', sub_dir)
     file = os.path.join(path, f'downloaded_{comp_id}.csv')
+    if os.path.exists(file):
+        offset = get_offset(file)
     status = [0, 5 ,6 ,22]
     thresh = 1000
-    with open(file, 'w') as f:
+    with open(file, 'a') as f:
         csv_writer = csv.writer(f)
-        flag = True
         while True:
             limit = offset+thresh
             media_records = []
@@ -201,7 +218,6 @@ async def read_media_by_company(comp_id, offset=0):
                     if media_obj['ce'].get('status', -1) not in status:
                         continue
                     media_records.append([json.dumps(media_obj)])
-                    flag = False
 
             except Exception as e:
                 failed_db_writer.writerow([comp_id, offset])
@@ -210,24 +226,26 @@ async def read_media_by_company(comp_id, offset=0):
             csv_writer.writerows(media_records)
             offset = limit
 
-    if flag and os.path.exists(file):
-        os.remove(file)
     print(f'Finished Reading company data for company - {comp_id}')
 
 
 
 def get_media_count_by_company(comp_type):
     comp_list = get_companies_by_type(comp_type)
+    comp_map = {}
+    for comp in comp_list:
+        medias = N1QLRequest(
+            _N1QLQuery(
+                'SELECT count(*) as cnt FROM ce WHERE companyId=$1 and type in $2', comp, mediaTypes), cb)
+        # if medias.metrics.get('resultCount', 0) == 0:
+        #     break
+        medias = list(medias)[0]
+        comp_map[comp]=medias.get('cnt',0)
+
     with open(f'{comp_type}_companies_cnt.csv', 'w') as f:
         writer = csv.writer(f)
-        for comp in comp_list:
-            medias = N1QLRequest(
-                _N1QLQuery(
-                    'SELECT count(*) as cnt FROM ce WHERE companyId=$1 and type in $2', comp, mediaTypes), cb)
-            # if medias.metrics.get('resultCount', 0) == 0:
-            #     break
-            medias=list(medias)[0]
-            writer.writerow([comp, medias.get('cnt',0)])
+        for comp in sorted(comp_map, key=comp_map.get):
+            writer.writerow([comp, comp_map[comp]])
 
 
 
@@ -244,9 +262,11 @@ def get_companies_by_type(comp_type='ALL'):
     return companies
 
 
-async def read_batch_to_migrate_from_db(comp_list):
+def read_batch_to_migrate_from_db(comp_list):
     print('Start Reading medias from db....')
-    await asyncio.gather(*[read_media_by_company(cmp) for cmp in comp_list if companySettings.get(f'{cmp}.settings') is not None])
+    for comp in comp_list:
+        if companySettings.get(f'{comp}.settings') is not None:
+            read_media_by_company(comp)
     print(f'Finieshed Reading data from db')
 
     # for comp in companies_list[:20]:
@@ -259,29 +279,27 @@ async def read_batch_to_migrate_from_db(comp_list):
 #   # res = await asyncio.gather(*[data_mig(comp_type) for comp_type in companyTypes])
 
 
-async def main():
+def read_data_for_migration(comp_list, dir):
     # read_company_settings_from_db()
     load_company_settings()
     #
     # comp_list = get_companies_by_type('CUSTOMER')
     # comp_list = comp_list[400:405]
-    for type in companyTypes:
-        get_media_count_by_company(type)
+    # for type in companyTypes:
+    #     get_media_count_by_company(type)
 
-    comp_list = ['817283497610854710']
+    # comp_list = ['817283497610854710']
 
     global sub_dir, failed_db_writer
-    sub_dir = 'Testing0'
+    sub_dir = dir
     dir_path = get_dir('', sub_dir)
-    failed_reads = open(f'{dir_path}/docs_failed_db_reads.csv','a')
+    failed_reads = open(f'{dir_path}/failed_db_reads.csv','a')
     failed_db_writer=csv.writer(failed_reads)
 
-    task = asyncio.create_task(read_batch_to_migrate_from_db(comp_list))
-    await task
+    read_batch_to_migrate_from_db(comp_list)
     failed_reads.close()
 
 
 
-if __name__ == '__main__':
-    # main()
-    asyncio.run(main())
+# if __name__ == '__main__':
+#     main()
