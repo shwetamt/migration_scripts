@@ -11,9 +11,9 @@ channel_ready_future = grpc.channel_ready_future(channel)
 channel_ready_future.result(timeout=10)
 stub = DocServiceStub(channel)
 
-cbhost = 'cb-backup-ce-node-1.internal.mindtickle.com:8091'
+cbhost = '10.11.120.220:8091'
 
-cb = Bucket('couchbase://' + cbhost + '/ce', username='couchbase', password='couchbase')
+cb = Bucket('couchbase://' + cbhost + '/ce', username='mindtickle', password='testcb6mindtickle')
 
 sub_dir = ''
 
@@ -33,7 +33,7 @@ def get_dir(prefix, sub_dir):
 def update_cb_object(comp_id):
     import couchbase_core.subdocument as SD
 
-    medias = ["DOCUMENT_WORD","DOCUMENT_POWERPOINT","DOCUMENT_EXCEL","DOCUMENT_PDF","AUDIO"]
+    medias = ["DOCUMENT_WORD","DOCUMENT_POWERPOINT","DOCUMENT_EXCEL","DOCUMENT_PDF","AUDIO", "VIDEO"]
     doc_id = f'{comp_id}.settings'
     try:
         r1=cb.get(doc_id)
@@ -68,7 +68,9 @@ def enable_picasso(comp_list, sub_dir):
             update_cb_object(comp_id)
 
 
+def enable_flag(comp_id):
+    update_cb_object(comp_id)
 
-# if __name__=='__main__':
-#     id = '817283497610854710'
-#     update_cb_object(id)
+if __name__=='__main__':
+    id = '1268440569138087604'
+    update_cb_object(id)

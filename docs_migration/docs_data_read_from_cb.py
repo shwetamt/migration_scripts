@@ -15,9 +15,9 @@ channel_ready_future = grpc.channel_ready_future(channel)
 channel_ready_future.result(timeout=10)
 stub = DocServiceStub(channel)
 
-cbhost = 'cb-backup-ce-node-1.internal.mindtickle.com:8091'
+cbhost = '10.11.120.220:8091'
 
-cb = Bucket('couchbase://' + cbhost + '/ce', username='couchbase', password='couchbase')
+cb = Bucket('couchbase://' + cbhost + '/ce', username='mindtickle', password='testcb6mindtickle')
 
 companyTypes = ['CUSTOMER', 'PROSPECT', 'QA', 'DEV', 'UNKNOWN', 'DELETED']
 
@@ -282,14 +282,14 @@ def read_batch_to_migrate_from_db(comp_list):
 def read_data_for_migration(comp_list, dir):
     # read_company_settings_from_db()
     load_company_settings()
-    #
+
     # comp_list = get_companies_by_type('CUSTOMER')
     # comp_list = comp_list[400:405]
     # for type in companyTypes:
     #     get_media_count_by_company(type)
 
     # comp_list = ['817283497610854710']
-
+    # r = cb.get(f'{comp_list[0]}.settings')
     global sub_dir, failed_db_writer
     sub_dir = dir
     dir_path = get_dir('', sub_dir)

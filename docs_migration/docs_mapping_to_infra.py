@@ -20,9 +20,9 @@ channel_ready_future = grpc.channel_ready_future(channel)
 channel_ready_future.result(timeout=10)
 stub = DocServiceStub(channel)
 
-cbhost = 'cb-backup-ce-node-1.internal.mindtickle.com:8091'
+cbhost = '10.11.120.220:8091'
 
-cb = Bucket('couchbase://' + cbhost + '/ce', username='couchbase', password='couchbase')
+cb = Bucket('couchbase://' + cbhost + '/ce', username='mindtickle', password='testcb6mindtickle')
 
 companyTypes = ['CUSTOMER', 'PROSPECT', 'QA', 'DEV', 'UNKNOWN', 'DELETED']
 
@@ -677,7 +677,6 @@ async def migrate_media_by_company(companies_list=[]):
     for comp_id in companies_list:
         if companySettings.get(f'{comp_id}.settings') is None:
             continue
-        companySettings[f'{comp_id}.settings']['orgId'] += '3354321'
         tasks.append(migrate_company(comp_id))
     await asyncio.gather(*tasks)
     print(f'Migration completed')

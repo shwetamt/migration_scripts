@@ -67,7 +67,9 @@ def copy_to_folder(obj, already_copied):
         key = s3_obj['Key']
         if key in already_copied:
             continue
-        suff = key.lstrip(from_folder)
+        root = key.split('/')
+        sub = from_folder.split('/')
+        suff = "/".join(root[len(sub):])
         mod_obj = {'from_bucket': obj['from_bucket'], 'from_file': key, 'to_bucket': obj['to_bucket'], 'to_file': f'{to_folder}/{suff}'}
         try:
             copy_to_bucket(mod_obj)
@@ -111,7 +113,11 @@ def copy_paths_by_company(comp_id):
                 continue
             try:
                 if row[1].endswith('{image_num}.png'):
-                    obj = {'from_bucket': row[0], 'from_folder': row[1].rstrip('/out_{image_num}.png'), 'to_bucket': row[2], 'to_folder': row[3].rstrip('/out_{image_num}.png')}
+                    from_fol = row[1].split('/')
+                    from_fol = "/".join(from_fol[:len(from_fol)-1])
+                    to_fol = row[3].split('/')
+                    to_fol = "/".join(from_fol[:len(to_fol) - 1])
+                    obj = {'from_bucket': row[0], 'from_folder': from_fol, 'to_bucket': row[2], 'to_folder': to_fol}
                     paths = copy_to_folder(obj, already_copied)
                     copied_writer.writerows(paths)
                 else:
@@ -121,7 +127,7 @@ def copy_paths_by_company(comp_id):
 
                 print(f'success - {obj}')
             except Exception as e:
-                failed_writer.writerow(row)
+                failed_writer.writerow(row+[e])
                 print(f'Exception while copying file/files for - {obj} - {e}')
     print(f'Copied files for company - {comp_id}')
 
@@ -139,5 +145,12 @@ def copy_object_paths(comp_list,dir):
 
 
 
+# if __name__=='__main__':
+#    row='mtgame-cdn.mindtickle.com,1261175967008605974/1589875870994major.pdf/imagified/out_{image_num}.png,mt-picasso-asia-singapore,1261175961909629773/1261175967008605974/CATALOGUE21011114383323644344/out_{image_num}.png'
+#    row=row.split(',')
+#    if row[1].endswith('{image_num}.png'):
+#        obj = {'from_bucket': row[0], 'from_folder': row[1].rstrip('/out_{image_num}.png'), 'to_bucket': row[2],
+#               'to_folder': row[3].rstrip('/out_{image_num}.png')}
+#        paths = copy_to_folder(obj, set())
 
 

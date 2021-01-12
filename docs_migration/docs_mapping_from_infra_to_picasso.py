@@ -20,9 +20,9 @@ channel_ready_future = grpc.channel_ready_future(channel)
 channel_ready_future.result(timeout=10)
 stub = DocServiceStub(channel)
 
-cbhost = 'cb-backup-ce-node-1.internal.mindtickle.com:8091'
+cbhost = '10.11.120.220:8091'
 
-cb = Bucket('couchbase://' + cbhost + '/ce', username='couchbase', password='couchbase')
+cb = Bucket('couchbase://' + cbhost + '/ce', username='mindtickle', password='testcb6mindtickle')
 
 companyTypes = ['CUSTOMER', 'PROSPECT', 'QA', 'DEV', 'UNKNOWN', 'DELETED']
 
@@ -355,7 +355,7 @@ async def map_company_data(comp_id):
 
     if mig_except == 0 and os.path.exists(f'{failed_mapping}/failed_picasso_mapping_{comp_id}.csv'):
         os.remove(f'{failed_mapping}/failed_picasso_mapping_{comp_id}.csv')
-    print(f'Migration completed for company - {comp_id}')
+    print(f'Mapping completed for company - {comp_id}')
 
 
 async def map_media_data_by_company(companies_list=[]):
