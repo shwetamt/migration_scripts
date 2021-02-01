@@ -15,6 +15,6 @@ def main(comp_list, dir):
 
 
 if __name__=='__main__':
-    dir = 'Final_test'
-    comp_list = ['1261175967008605974']
+    dir = 'automation'
+    comp_list = ['1325703240109091977']
     main(comp_list, dir)

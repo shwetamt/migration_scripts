@@ -21,8 +21,10 @@ channel_ready_future.result(timeout=10)
 stub = DocServiceStub(channel)
 
 cbhost = '10.11.120.220:8091'
-
 cb = Bucket('couchbase://' + cbhost + '/ce', username='mindtickle', password='testcb6mindtickle')
+
+# cbhost = 'cb6-node-1-staging.mindtickle.com:8091'
+# cb = Bucket('couchbase://' + cbhost + '/ce', username='couchbase', password='couchbase')
 
 companyTypes = ['CUSTOMER', 'PROSPECT', 'QA', 'DEV', 'UNKNOWN', 'DELETED']
 
@@ -181,21 +183,172 @@ def get_representation_properties(id, orgId, companyId, userId,representation_id
   return media_obj
 
 
-def get_picasso_type(media_type):
-    if media_type == 'AUDIO':
-        return 'AUDIO'
-    elif media_type == 'IMAGE':
-        return 'IMAGE'
-    elif media_type == 'WORD':
+def get_picasso_type(mime_type):
+    if mime_type == '.doc':
         return 'DOCUMENT_WORD'
-    elif media_type == 'PPT':
+    elif mime_type == '.ppt':
         return 'DOCUMENT_POWERPOINT'
-    elif media_type == 'XLS':
+    elif mime_type == '.xls':
         return 'DOCUMENT_EXCEL'
-    elif media_type == 'PDF':
+    elif mime_type == '.pdf':
         return 'DOCUMENT_PDF'
     return 'UNDEFINED'
 
+
+def get_audio_division(type, media):
+    if type == '.vtt':
+        return media.get('language', '')
+    elif type == '.out' or type == '.json':
+        return "RAW"
+    elif type == '.mp3':
+        return 'MP3'
+    elif type == '.flac':
+        return 'FLAC'
+    return 'UNDEFINED'
+
+
+def get_document_representation_name(type):
+    if type == '.vtt':
+        return 'AUTO_SUBTITLE'
+    elif type == '.out' or type == 'json':
+        return 'TRANSCRIPTION'
+    elif type == '.pdf':
+        return 'PDF'
+    elif type == '.png':
+        return 'IMAGE'
+    # image type support
+    # elif type == '.doc' or type == '.docx':
+    #     return 'WORD'
+    # elif type == '.ppt' or type == '.pptx':
+    #     return 'PPT'
+    # elif type == 'XLS':
+    #     return 'XLS'
+    elif type == 'CATALOGUE':
+        return 'IMAGE'
+    return 'UNDEFINED'
+
+
+def get_audio_representation_name(type):
+    if type == '.mp3':
+        return 'MP3'
+    elif type == '.flac':
+        return 'FLAC'
+    elif type == '.vtt':
+        return 'AUTO_SUBTITLE'
+    elif type == '.out' or type == 'json':
+        return 'TRANSCRIPTION'
+    # elif type == '.pdf':
+    #     return 'PDF'
+    return 'UNDEFINED'
+
+
+def get_document_division(type, media):
+    if type == '.vtt':
+        return media.get('language', '')
+    elif type == '.out' or type == '.json':
+        return 'RAW'
+    elif type == '.pdf':
+        return 'RAW'
+    elif type == '.doc' or type == '.docx':
+        return 'RAW'
+    elif type == '.ppt' or type == '.pptx':
+        return 'RAW'
+    elif type == 'XLS':
+        return 'RAW'
+    elif type == 'CATALOGUE':
+        return ''     # confirm divison
+    return 'UNDEFINED'
+
+
+
+def get_infra_type(ext):
+    if ext == '.pdf':
+        return "PDF"
+    elif ext == ".vtt":
+        return "VTT"
+    elif ext == '.ppt' or ext == '.pptx':
+        return "PPT"
+    elif ext == '.doc' or ext == '.docx':
+        return "WORD"
+    elif ext == '.json':
+        return "JSON"
+    elif ext == ".xlsx" or ext == '.xls':
+        return "XLS"
+
+
+
+def get_audio_representations(org_id, company_id, media_id, uploaded_by_id, sub_medias):
+    repr_list = []
+    repr_prop_list = []
+    for media in sub_medias:
+        mime_type = ''
+        division = ''
+        if media['type'] == 'AUDIO':
+            mime_type = media['mimeType']
+            division = get_audio_division(mime_type, media)   # flac
+        elif media['type'] == 'DOCUMENT':
+            mime_type = media['mimeType']
+            division = get_document_division(mime_type, media)  # divison diff - vtt -lang, trans - raw
+
+        representation_id = generate_representation_id(get_audio_representation_name(mime_type), media_id)
+        representation_media_object = get_representation(representation_id, org_id, company_id, uploaded_by_id,
+                                                         get_audio_representation_name(mime_type), media_id)
+        if len(representation_media_object) > 0:
+            repr_list.append(representation_media_object)
+        representation_properties_id = generate_representation_properties_id(get_audio_representation_name(mime_type),
+                                                                             media_id)
+        representation_property_object = get_representation_properties(representation_properties_id, org_id, company_id,
+                                                                       uploaded_by_id,
+                                                                       representation_media_object['id'], media['id'],
+                                                                       division)
+        if len(representation_property_object) > 0:
+            repr_prop_list.append(representation_property_object)
+
+    return repr_list, repr_prop_list
+
+
+
+def get_document_representations(org_id, company_id, media_id, uploaded_by_id, sub_medias):
+    repr_list = []
+    repr_prop_list = []
+    for media in sub_medias:
+        mime_type = ''
+        division = ''
+        if media['type'] == 'IMAGE':
+            mime_type = '.png'
+            division = 'THUMBNAIL'
+            continue
+        elif media['type'] == 'DOCUMENT':
+            mime_type = media['mimeType']
+            division = get_document_division(mime_type, media)  # divison diff - vtt -lang, trans - raw
+        elif media['type'] == 'CATALOGUE':
+            mime_type = 'CATALOGUE'
+            division = ''
+
+        representation_id = generate_representation_id(get_document_representation_name(mime_type), media_id)
+        representation_media_object = get_representation(representation_id, org_id, company_id, uploaded_by_id,
+                                                         get_document_representation_name(mime_type), media_id)
+        if len(representation_media_object) > 0:
+            repr_list.append(representation_media_object)
+        representation_properties_id = generate_representation_properties_id(get_document_representation_name(mime_type),
+                                                                             media_id)
+        representation_property_object = get_representation_properties(representation_properties_id, org_id, company_id,
+                                                                       uploaded_by_id,
+                                                                       representation_media_object['id'], media['id'],
+                                                                       division)
+        if len(representation_property_object) > 0:
+            repr_prop_list.append(representation_property_object)
+
+    return repr_list, repr_prop_list
+
+
+
+def get_media_representations(type, org_id, company_id, media_id, uploaded_by_id, sub_medias):
+    if type == "DOCUMENT":
+        return get_document_representations(org_id, company_id, media_id, uploaded_by_id, sub_medias)
+    elif type == "AUDIO":
+        return get_audio_representations(org_id, company_id, media_id, uploaded_by_id, sub_medias)
+    return [], []
 
 
 def get_already_processed_media(comp_id):
@@ -247,38 +400,13 @@ async def map_company_data(comp_id):
                 uploaded_by_id = media_obj['userId']
                 user_id = uploaded_by_id
                 type = original_media['type']
+                picasso_type = type
                 if type == 'DOCUMENT':
                     picasso_type = get_picasso_type(original_media['subtype'])
-                else:
-                    picasso_type = get_picasso_type(type)
                 picasso_obj = get_media(mediaId, org_id, company_id, uploaded_by_id, original_media['id'], original_media['name'], picasso_type)
                 sub_medias = media_obj['sub_media']
-                repr_list=[]
-                repr_prop_list=[]
-                for media in sub_medias:
-                    type_infra = ''
-                    division = ''
-                    if media['type'] == 'IMAGE':
-                        type_infra = 'IMAGE'
-                        division = 'THUMBNAIL'
-                    elif media['type'] == 'AUDIO':
-                        type_infra = 'AUDIO'
-                        division = 'MP3'
-                    elif media['type'] == 'DOCUMENT':
-                        type_infra = media['subtype']
-                        division = get_representation_name(type_infra)
-                    elif media['type'] == 'CATALOGUE':
-                        type_infra = 'CATALOGUE'
-                        division = 'IMAGE'
 
-                    representation_id = generate_representation_id(get_representation_name(type_infra), mediaId)
-                    representation_media_object = get_representation(representation_id, org_id, company_id, uploaded_by_id, get_representation_name(type_infra), mediaId)
-                    if len(representation_media_object) > 0:
-                        repr_list.append(representation_media_object)
-                    representation_properties_id = generate_representation_properties_id(get_representation_name(type_infra), mediaId)
-                    representation_property_object = get_representation_properties(representation_properties_id, org_id, company_id, uploaded_by_id, representation_media_object['id'], media['id'], division)
-                    if len(representation_property_object) > 0:
-                        repr_prop_list.append(representation_property_object)
+                repr_list, repr_prop_list = get_media_representations(type, org_id, company_id, mediaId, uploaded_by_id, sub_medias)
 
             except Exception as e:
                 failed_writer.writerow([raw_obj, str(e)])

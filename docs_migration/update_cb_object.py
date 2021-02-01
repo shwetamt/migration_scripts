@@ -12,8 +12,10 @@ channel_ready_future.result(timeout=10)
 stub = DocServiceStub(channel)
 
 cbhost = '10.11.120.220:8091'
-
 cb = Bucket('couchbase://' + cbhost + '/ce', username='mindtickle', password='testcb6mindtickle')
+
+# cbhost = 'cb6-node-1-staging.mindtickle.com:8091'
+# cb = Bucket('couchbase://' + cbhost + '/ce', username='couchbase', password='couchbase')
 
 sub_dir = ''
 
@@ -38,14 +40,20 @@ def update_cb_object(comp_id):
     try:
         r1=cb.get(doc_id)
         value = r1.value
-        mig = value.get('extra_config', {}).get('picassoMigratedMedia','')
-        if len(mig)>0:
-            mig=mig.split(',')
-        else:
-            mig=[]
-        new_mig = ",".join(list(set(mig + medias)))
-        value.setdefault('extra_config',{})['picassoMigratedMedia'] = new_mig
+        # mig = value.get('extra_config', {}).get('picassoMigratedMedia','')
+        # if len(mig)>0:
+        #     mig=mig.split(',')
+        # else:
+        #     mig=[]
+        # new_mig = ",".join(list(set(mig + medias)))
+        if value.get('extra_config') is None:
+            value['extra_config'] = {}
+        # value['extra_config']['picassoMigratedMedia'] = new_mig
+        # value['extra_config']['picassoMedia'] = new_mig
+        # value['extra_config']['picassoEnabled'] = True
+        value['extra_config']['reflowEnabled'] = True
         cb.upsert(doc_id, value)
+        print(f'success - {comp_id}')
         # cb.mutate_in(doc_id, SD.upsert("picassoMigratedMedia.test", "newValue", create_parents=True))
         # resp = N1QLRequest(
         # _N1QLQuery('UPDATE ce SET extra_config.picassoMigratedMedia = $1 WHERE META().id=$2', medias, doc_id ), cb)
@@ -72,5 +80,6 @@ def enable_flag(comp_id):
     update_cb_object(comp_id)
 
 if __name__=='__main__':
-    id = '1268440569138087604'
+    # id = '1325703240109091977'
+    id = '1261175967008605974'
     update_cb_object(id)

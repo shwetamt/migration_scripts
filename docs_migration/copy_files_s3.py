@@ -71,12 +71,9 @@ def copy_to_folder(obj, already_copied):
         sub = from_folder.split('/')
         suff = "/".join(root[len(sub):])
         mod_obj = {'from_bucket': obj['from_bucket'], 'from_file': key, 'to_bucket': obj['to_bucket'], 'to_file': f'{to_folder}/{suff}'}
-        try:
-            copy_to_bucket(mod_obj)
-            paths.append([obj['from_bucket'], key, obj['to_bucket'], f'{to_folder}/{suff}'])
-            print(f'sucess - {mod_obj}')
-        except Exception as e:
-            print(f'Exception while copying object - {mod_obj} - {e}')
+        copy_to_bucket(mod_obj)
+        paths.append([obj['from_bucket'], key, obj['to_bucket'], f'{to_folder}/{suff}'])
+        print(f'sucess - {mod_obj}')
     return paths
 
 
@@ -116,15 +113,16 @@ def copy_paths_by_company(comp_id):
                     from_fol = row[1].split('/')
                     from_fol = "/".join(from_fol[:len(from_fol)-1])
                     to_fol = row[3].split('/')
-                    to_fol = "/".join(from_fol[:len(to_fol) - 1])
+                    to_fol = "/".join(to_fol[:len(to_fol) - 1])
                     obj = {'from_bucket': row[0], 'from_folder': from_fol, 'to_bucket': row[2], 'to_folder': to_fol}
                     paths = copy_to_folder(obj, already_copied)
-                    copied_writer.writerows(paths)
+                    if len(paths)>0:
+                        copied_writer.writerows(paths)
                 else:
                     obj = {'from_bucket': row[0], 'from_file': row[1], 'to_bucket': row[2], 'to_file': row[3]}
                     copy_to_bucket(obj)
-                    copied_writer.writerow(row)
 
+                copied_writer.writerow(row)
                 print(f'success - {obj}')
             except Exception as e:
                 failed_writer.writerow(row+[e])

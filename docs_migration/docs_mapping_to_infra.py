@@ -21,8 +21,11 @@ channel_ready_future.result(timeout=10)
 stub = DocServiceStub(channel)
 
 cbhost = '10.11.120.220:8091'
-
 cb = Bucket('couchbase://' + cbhost + '/ce', username='mindtickle', password='testcb6mindtickle')
+
+# cbhost = 'cb6-node-1-staging.mindtickle.com:8091'
+# cb = Bucket('couchbase://' + cbhost + '/ce', username='couchbase', password='couchbase')
+
 
 companyTypes = ['CUSTOMER', 'PROSPECT', 'QA', 'DEV', 'UNKNOWN', 'DELETED']
 
@@ -156,6 +159,18 @@ def getDoc(id, doc):
     return Doc(id=id, doc=doc)
 
 
+def get_audio_mime(path):
+    ext = path.split('.')
+    if len(ext) < 2:
+        return '.mp3'
+    ext = ext[-1]
+    if ext == 'mp3':
+        return ".mp3"
+    elif ext == "flac":
+        return ".flac"
+    return ".mp3"
+
+
 def get_audio_objects(cb_obj):
     mapped_dict = {'original_media': [], 'sub_media': []}
     media_obj = cb_obj['ce']
@@ -169,10 +184,13 @@ def get_audio_objects(cb_obj):
     if 'original_path' not in media_obj or media_obj['original_path'] is None:
         raise Exception(f"original path not present in company - {cId}")
 
-    mapped_dict['original_media'].append(get_mapped_audio_obj(get_media_object(cb_obj, comp_obj, 'AUDIO'), media_obj, region_bucket[cdn], media_obj.get('original_path'), cdn))
+    mapped_dict['original_media'].append(get_mapped_audio_obj(get_media_object(cb_obj, comp_obj, 'AUDIO'), media_obj, get_audio_mime(media_obj.get('original_path')), region_bucket[cdn], media_obj.get('original_path'), cdn))
 
     if 'mp3Path' in media_obj and media_obj['mp3Path'] is not None:
-        mapped_dict['sub_media'].append(get_mapped_audio_obj(get_media_object(cb_obj, comp_obj, 'AUDIO'), media_obj, streaming_bucket[cdn], media_obj.get('mp3Path'), cdn))
+        mapped_dict['sub_media'].append(get_mapped_audio_obj(get_media_object(cb_obj, comp_obj, 'AUDIO'), media_obj, ".mp3", streaming_bucket[cdn], media_obj.get('mp3Path'), cdn))
+
+    if 'flacPath' in media_obj and media_obj['flacPath'] is not None:
+        mapped_dict['sub_media'].append(get_mapped_audio_obj(get_media_object(cb_obj, comp_obj, 'AUDIO'), media_obj, ".flac", region_bucket[cdn], media_obj.get('flacPath'), cdn))
 
     if 'vttSubtitlePath' in media_obj and media_obj['vttSubtitlePath'] is not None:
         mapped_dict['sub_media'].append(get_subtitle_media(get_media_object(cb_obj, comp_obj, 'DOCUMENT'), media_obj, region_bucket[cdn], media_obj.get('vttSubtitlePath'), cdn))
@@ -184,17 +202,29 @@ def get_audio_objects(cb_obj):
     if 'transcriptPath' in media_obj and media_obj['transcriptPath'] is not None:
         mapped_dict['sub_media'].append(
             get_transcription_media(get_media_object(cb_obj, comp_obj, 'DOCUMENT'), media_obj, region_bucket[cdn], media_obj.get('transcriptPath'), cdn))
-
+    #
+    # if (audio.vttSubtitlePath != null) {
+    # audio.vttSubtitlePath = generateCloudFrontUrlString(region, audio.vttSubtitlePath, BucketType.OTHERS, expiry);
+    # }
+    # if (audio.flacPath != null) {
+    # audio.flacPath = generateCloudFrontUrlString(region, audio.flacPath, BucketType.OTHERS, expiry);
+    # }
+    # if (audio.transcriptPath != null) {
+    # audio.transcriptPath = generateCloudFrontUrlString(region, audio.transcriptPath, BucketType.OTHERS, expiry);
+    # }
     return mapped_dict
 
 
 def get_audio_type(ext):
     if ext == 'mp3':
-        return "MP3"
+        return ".mp3"
+    elif ext == 'flac':
+        return ".flac"
     return "UNDEFINED"
 
 
-def get_mapped_audio_obj(mapped_obj, media_obj, bucket, s3key, cdn):
+
+def get_mapped_audio_obj(mapped_obj, media_obj, mime_key, bucket, s3key, cdn):
     comp_id = mapped_obj['companyId']
     org_id = mapped_obj['orgId']
     id = mapped_obj['id']
@@ -206,7 +236,7 @@ def get_mapped_audio_obj(mapped_obj, media_obj, bucket, s3key, cdn):
     mapped_obj["key"] = new_key
     mapped_obj["bucket"] = new_bucket
     mapped_obj["type"] = 'AUDIO'
-    mapped_obj["subtype"] = get_audio_type(s3key.split('.')[-1])
+    # mapped_obj["subtype"] = get_audio_type(s3key.split('.')[-1])
     mapped_obj["sizeBytes"] = str(media_obj.get('size', 0))
     mapped_obj["height"] = ''
     mapped_obj["width"] = ''
@@ -217,29 +247,9 @@ def get_mapped_audio_obj(mapped_obj, media_obj, bucket, s3key, cdn):
     mapped_obj["metadataError"] = ''
     mapped_obj["durationSeconds"] = str(media_obj.get('contentParts', 0))
     # mapped_obj["srcS3Key"]
-    mapped_obj["mimeType"] = 'migrated'
+    mapped_obj["mimeType"] = mime_key    #ext .flac .mp3
     mapped_obj["language"] = ''
     return mapped_obj
-
-
-def get_document_type(path):
-    ext = path.split('.')
-    if len(ext) < 2:
-        return 'UNDEFINED'
-    ext = ext[-1]
-    if ext == 'pdf':
-        return "pdf"
-    elif ext == "vtt":
-        return "vtt"
-    elif ext == 'ppt' or ext == 'pptx':
-        return "ppt"
-    elif ext == 'doc' or ext == 'docx':
-        return "doc"
-    elif ext == 'json':
-        return "json"
-    elif ext == "xlsx" or ext == 'xls':
-        return "xls"
-    return "UNDEFINED"
 
 
 def get_image_type(path):
@@ -250,7 +260,7 @@ def get_image_type(path):
 
 
 
-def get_mapped_document_obj(mapped_obj, media_obj, sub_type, bucket, s3key, cdn):
+def get_mapped_document_obj(mapped_obj, media_obj, mime_type, bucket, s3key, cdn):
     comp_id = mapped_obj['companyId']
     org_id = mapped_obj['orgId']
     id = mapped_obj['id']
@@ -262,7 +272,7 @@ def get_mapped_document_obj(mapped_obj, media_obj, sub_type, bucket, s3key, cdn)
     mapped_obj["key"] = new_key
     mapped_obj["bucket"] = new_bucket
     mapped_obj["type"] = 'DOCUMENT'
-    mapped_obj["subtype"] = sub_type
+    # mapped_obj["subtype"] = sub_type
     mapped_obj["sizeBytes"] = str(media_obj.get('size', 0))
     mapped_obj["numPages"] = str(media_obj.get('contentParts', 0))
     mapped_obj["height"] = ''
@@ -271,7 +281,7 @@ def get_mapped_document_obj(mapped_obj, media_obj, sub_type, bucket, s3key, cdn)
     mapped_obj["metadataStatus"] = 'SUCCESS'
     mapped_obj["locationError"] = ''
     mapped_obj["metadataError"] = ''
-    mapped_obj["mimeType"] = '.' + get_document_type(s3key)
+    mapped_obj["mimeType"] = mime_type
     mapped_obj["language"] = ''
     return mapped_obj
 
@@ -313,7 +323,7 @@ def get_mapped_catalogue_object(mapped_obj, media_obj, bucket, s3key, cdn):
     mapped_obj["key"] = new_key
     mapped_obj["bucket"] = new_bucket
     mapped_obj["type"] = 'CATALOGUE'
-    mapped_obj["subtype"] = ''
+    # mapped_obj["subtype"] = ''
     mapped_obj["sizeBytes"] = '0'
     mapped_obj["height"] = ''
     mapped_obj["width"] = ''
@@ -338,7 +348,7 @@ def get_subtitle_media(mapped_obj, media_obj, bucket, s3key, cdn):
     mapped_obj["key"] = new_key
     mapped_obj["bucket"] = new_bucket
     mapped_obj["type"] = 'DOCUMENT'
-    mapped_obj["subtype"] = 'VTT'
+    # mapped_obj["subtype"] = 'VTT'
     mapped_obj["sizeBytes"] = '0'
     mapped_obj["width"] = ''
     mapped_obj["numPages"] = '1'
@@ -346,6 +356,7 @@ def get_subtitle_media(mapped_obj, media_obj, bucket, s3key, cdn):
     mapped_obj["metadataStatus"] = 'SUCCESS'
     mapped_obj["locationError"] = ''
     mapped_obj["metadataError"] = ''
+    mapped_obj["language"] = ''
     mapped_obj["mimeType"] = '.vtt'
     return mapped_obj
 
@@ -362,7 +373,7 @@ def get_transcription_media(mapped_obj, media_obj, bucket, s3key, cdn):
     mapped_obj["key"] = new_key
     mapped_obj["bucket"] = new_bucket
     mapped_obj["type"] = 'DOCUMENT'
-    mapped_obj["subtype"] = 'JSON'
+    # mapped_obj["subtype"] = 'JSON'
     mapped_obj["sizeBytes"] = '0'
     mapped_obj["width"] = ''
     mapped_obj["numPages"] = '1'
@@ -372,6 +383,38 @@ def get_transcription_media(mapped_obj, media_obj, bucket, s3key, cdn):
     mapped_obj["metadataError"] = ''
     mapped_obj["mimeType"] = '.json'
     return mapped_obj
+
+
+def get_mime_by_type(type):
+    if type == 'PDF':
+        return ".pdf"
+    elif type == "WORD":
+        return ".doc"
+    elif type == "XLS":
+        return ".xls"
+    elif type == "PPT":
+        return ".ppt"
+    return ".pdf"
+
+
+def get_doc_mime(path, type):
+    ext = path.split('.')
+    if len(ext) < 2:
+        return get_mime_by_type(type)
+    ext = ext[-1]
+    if ext == 'pdf':
+        return ".pdf"
+    elif ext == "vtt":
+        return "vtt"
+    elif ext == 'ppt' or ext == 'pptx':
+        return ".ppt"
+    elif ext == 'doc' or ext == 'docx':
+        return ".doc"
+    elif ext == 'json' or ext == '.out':
+        return ".json"
+    elif ext == "xlsx" or ext == 'xls':
+        return ".xls"
+    return get_mime_by_type(type)
 
 
 def get_document_objects(cb_obj):
@@ -384,19 +427,19 @@ def get_document_objects(cb_obj):
     if comp_obj is None:
         return []
     cdn = comp_obj['cdnId']
-    type = docs.get(media_obj['type'], 'DOC')
+    type = docs.get(media_obj['type'], 'PDF')
 
     if 'original_path' not in media_obj or media_obj['original_path'] is None:
         raise Exception(f"original path not present in company - {cId}")
 
     original_path = media_obj['original_path']
-    mapped_dict['original_media'].append(get_mapped_document_obj(get_media_object(cb_obj, comp_obj, 'DOCUMENT'), media_obj, type, region_bucket[cdn], original_path, cdn))
+    mapped_dict['original_media'].append(get_mapped_document_obj(get_media_object(cb_obj, comp_obj, 'DOCUMENT'), media_obj, get_doc_mime(original_path, type), region_bucket[cdn], original_path, cdn))
 
     if media_obj.get('uuid') or media_obj.get('docProcessor') == 'BOX' or media_obj.get('docProcessor') == 'HYBRID':
 
         if media_obj.get('docProcessor') == 'CROCODOC' or media_obj.get('docProcessor') is None:
             uuid = media_obj.get('uuid', '')
-            pdf = get_mapped_document_obj(get_media_object(cb_obj, comp_obj, 'DOCUMENT'), media_obj, 'PDF', croco_bucket[cdn],
+            pdf = get_mapped_document_obj(get_media_object(cb_obj, comp_obj, 'DOCUMENT'), media_obj, '.pdf', croco_bucket[cdn],
                                           uuid + "/doc.pdf", cdn)
             thumb = get_mapped_image_object(get_media_object(cb_obj, comp_obj, 'IMAGE'), media_obj, croco_bucket[cdn],
                                             uuid + "/images/thumbnail-master-0.png", cdn)
@@ -404,7 +447,7 @@ def get_document_objects(cb_obj):
             mapped_dict['sub_media'].append(thumb)
 
         else:
-            pdf = get_mapped_document_obj(get_media_object(cb_obj, comp_obj, 'DOCUMENT'), media_obj, 'PDF',box_bucket[cdn],
+            pdf = get_mapped_document_obj(get_media_object(cb_obj, comp_obj, 'DOCUMENT'), media_obj, '.pdf',box_bucket[cdn],
                                           obj_id + "/doc.pdf", cdn)
             thumb = get_mapped_image_object(get_media_object(cb_obj, comp_obj, 'IMAGE'), media_obj, box_bucket[cdn],
                                             obj_id + "/images/thumbnail-master-0.png", cdn)
@@ -412,7 +455,7 @@ def get_document_objects(cb_obj):
             mapped_dict['sub_media'].append(thumb)
 
     if media_obj.get('docProcessor') == 'HTML_PDF_LAMBDA':
-        pdf = get_mapped_document_obj(get_media_object(cb_obj, comp_obj, 'DOCUMENT'), media_obj, 'PDF',
+        pdf = get_mapped_document_obj(get_media_object(cb_obj, comp_obj, 'DOCUMENT'), media_obj, '.pdf',
                                       region_bucket[cdn],
                                       original_path + "/doc.pdf", cdn)
         thumb = get_mapped_image_object(get_media_object(cb_obj, comp_obj, 'IMAGE'), media_obj, croco_bucket[cdn],
@@ -491,6 +534,7 @@ async def migrate_company(comp_id):
     if not os.path.exists(f'{downloaded_media}/downloaded_{comp_id}.csv'):
         print(f'media does not exist for comp - {comp_id}')
         return
+    status = [0, 5, 6, 22]
     global path_writer
     dir = get_dir('object_paths', sub_dir)
     obj_paths_file = open(f'{dir}/object_paths_{comp_id}.csv', 'a')
@@ -513,6 +557,8 @@ async def migrate_company(comp_id):
             raw_obj = row[0]
             cb_obj = json.loads(row[0])
             if cb_obj['id'] in already_procesed:
+                continue
+            if cb_obj['ce'].get('status', 0) not in status:
                 continue
             try:
                 ce_obj = cb_obj['ce']
@@ -659,8 +705,8 @@ def load_companies_to_process():
 
 def load_company_settings():
     global companySettings
-
-    with open(f'company_settings.csv') as f:
+    fl = f'company_settings_{sub_dir}.csv'
+    with open(fl) as f:
         csv_reader = csv.reader(f)
         for row in csv_reader:
             id, obj = row[0], json.loads(row[1])
@@ -706,13 +752,17 @@ def get_companies_by_type(comp_type='ALL'):
 
 
 async def map_medias_to_infra(comp_list, dir):
+    global sub_dir, failed_db_writer, path_writer, companySettings
+    sub_dir = dir
     # read_company_settings_from_db()
-    load_company_settings()
+    # load_company_settings()
+    n = f'{comp_list[0]}.settings'
+    r1 = cb.get(n)
+    companySettings = {n : r1.value}
+
+
 
     #comp_list = ['595584933866000779']
-
-    global sub_dir, failed_db_writer, path_writer
-    sub_dir = dir
 
     # comp_list = load_companies_to_process()
 
