@@ -11,11 +11,11 @@ channel_ready_future = grpc.channel_ready_future(channel)
 channel_ready_future.result(timeout=10)
 stub = DocServiceStub(channel)
 
-cbhost = '10.11.120.220:8091'
-cb = Bucket('couchbase://' + cbhost + '/ce', username='mindtickle', password='testcb6mindtickle')
+# cbhost = '10.11.120.220:8091'
+# cb = Bucket('couchbase://' + cbhost + '/ce', username='mindtickle', password='testcb6mindtickle')
 
-# cbhost = 'cb6-node-1-staging.mindtickle.com:8091'
-# cb = Bucket('couchbase://' + cbhost + '/ce', username='couchbase', password='couchbase')
+cbhost = 'cb6-node-1-staging.mindtickle.com:8091'
+cb = Bucket('couchbase://' + cbhost + '/ce', username='couchbase', password='couchbase')
 
 sub_dir = ''
 

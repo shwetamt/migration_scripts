@@ -20,11 +20,11 @@ channel_ready_future = grpc.channel_ready_future(channel)
 channel_ready_future.result(timeout=10)
 stub = DocServiceStub(channel)
 
-cbhost = '10.11.120.220:8091'
-cb = Bucket('couchbase://' + cbhost + '/ce', username='mindtickle', password='testcb6mindtickle')
+# cbhost = '10.11.120.220:8091'
+# cb = Bucket('couchbase://' + cbhost + '/ce', username='mindtickle', password='testcb6mindtickle')
 
-# cbhost = 'cb6-node-1-staging.mindtickle.com:8091'
-# cb = Bucket('couchbase://' + cbhost + '/ce', username='couchbase', password='couchbase')
+cbhost = 'cb6-node-1-staging.mindtickle.com:8091'
+cb = Bucket('couchbase://' + cbhost + '/ce', username='couchbase', password='couchbase')
 
 
 companyTypes = ['CUSTOMER', 'PROSPECT', 'QA', 'DEV', 'UNKNOWN', 'DELETED']
@@ -356,7 +356,7 @@ def get_subtitle_media(mapped_obj, media_obj, bucket, s3key, cdn):
     mapped_obj["metadataStatus"] = 'SUCCESS'
     mapped_obj["locationError"] = ''
     mapped_obj["metadataError"] = ''
-    mapped_obj["language"] = ''
+    mapped_obj["language"] = 'en-us'
     mapped_obj["mimeType"] = '.vtt'
     return mapped_obj
 
@@ -705,7 +705,7 @@ def load_companies_to_process():
 
 def load_company_settings():
     global companySettings
-    fl = f'company_settings_{sub_dir}.csv'
+    fl = f'{sub_dir}/company_settings.csv'
     with open(fl) as f:
         csv_reader = csv.reader(f)
         for row in csv_reader:
@@ -755,10 +755,11 @@ async def map_medias_to_infra(comp_list, dir):
     global sub_dir, failed_db_writer, path_writer, companySettings
     sub_dir = dir
     # read_company_settings_from_db()
-    # load_company_settings()
-    n = f'{comp_list[0]}.settings'
-    r1 = cb.get(n)
-    companySettings = {n : r1.value}
+    load_company_settings()
+    # n = f'{comp_list[0]}.settings'
+    # r1 = cb.get(n)
+    # r1.value['orgId']+='444555'
+    # companySettings = {n : r1.value}
 
 
 

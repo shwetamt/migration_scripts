@@ -15,11 +15,11 @@ channel_ready_future = grpc.channel_ready_future(channel)
 channel_ready_future.result(timeout=10)
 stub = DocServiceStub(channel)
 
-cbhost = '10.11.120.220:8091'
-cb = Bucket('couchbase://' + cbhost + '/ce', username='mindtickle', password='testcb6mindtickle')
+# cbhost = '10.11.120.220:8091'
+# cb = Bucket('couchbase://' + cbhost + '/ce', username='mindtickle', password='testcb6mindtickle')
 
-# cbhost = 'cb6-node-1-staging.mindtickle.com:8091'
-# cb = Bucket('couchbase://' + cbhost + '/ce', username='couchbase', password='couchbase')
+cbhost = 'cb6-node-1-staging.mindtickle.com:8091'
+cb = Bucket('couchbase://' + cbhost + '/ce', username='couchbase', password='couchbase')
 
 companyTypes = ['CUSTOMER', 'PROSPECT', 'QA', 'DEV', 'UNKNOWN', 'DELETED']
 
@@ -189,6 +189,17 @@ def get_failed_cb_reads_companies():
     return comp
 
 
+def write_company_settings():
+    global companySettings
+    print('Writing company settings...')
+    fl = f'{sub_dir}/company_settings.csv'
+    with open(fl, 'a') as f:
+        csv_writer = csv.writer(f)
+        for cId, cObj in companySettings.items():
+            csv_writer.writerow([cId, json.dumps(cObj)])
+    print('Successfully write company settings')
+
+
 def get_offset(file):
     cnt=0
     with open(file) as f:
@@ -206,27 +217,34 @@ def read_media_by_company(comp_id, offset=0):
     if os.path.exists(file):
         offset = get_offset(file)
     limit = 100
+    cb.n1ql_timeout = 8000
     with open(file, 'a') as f:
         csv_writer = csv.writer(f)
         while True:
             media_records = []
             try:
-                medias = N1QLRequest(
-                    _N1QLQuery(
+                query = _N1QLQuery(
                         'SELECT META().id, * FROM ce WHERE companyId=$1 and type in $2 order by id LIMIT $3 OFFSET $4',
                         comp_id, mediaTypes, limit,
-                        offset), cb)
-                if medias.metrics.get('resultCount', 0) == 0 :
-                    break
+                        offset)
+                query.timeout = 8000
+                medias = N1QLRequest(query, cb)
+                # if medias.metrics.get('resultCount', 0) == 0 :
+                #     break
                 for media_obj in medias:
                     media_records.append([json.dumps(media_obj)])
 
+                if len(media_records)==0:
+                    break
+
+                print(f'Successfully read medias from db - {comp_id} - offset - {offset} - limit - {limit}')
+                csv_writer.writerows(media_records)
+                offset += limit
+
             except Exception as e:
                 failed_db_writer.writerow([comp_id, offset])
+                print(f"Exception reading medias from db - {comp_id} - offset - {offset}")
                 return
-
-            csv_writer.writerows(media_records)
-            offset += limit
 
     print(f'Finished Reading company data for company - {comp_id}')
 
@@ -265,12 +283,23 @@ def get_companies_by_type(comp_type='ALL'):
 
 
 def read_batch_to_migrate_from_db(comp_list):
+    global companySettings
     print('Start Reading medias from db....')
     for comp in comp_list:
-        if companySettings.get(f'{comp}.settings') is not None:
-            companySettings[f'{comp}.settings']['orgId']+='333333'
+        try:
+            n = f'{comp}.settings'
+            r1 = cb.get(n)
+        except Exception as e:
+            print(f'Exception while reading company settings for - {comp} - {e}')
+
+        try:
+            if r1.value.get('companyState') != 'ACTIVE':
+                continue
+            companySettings[n] = r1.value
             read_media_by_company(comp)
-    print(f'Finieshed Reading data from db')
+        except Exception as e:
+            print(f'Exception while reading media for company - {comp} - {e}')
+    print(f'Finished Reading data from db')
 
     # for comp in companies_list[:20]:
     #   read_media_by_company(comp)
@@ -287,9 +316,9 @@ def read_data_for_migration(comp_list, dir):
     sub_dir = dir
     # read_company_settings_from_db()
     # load_company_settings()
-    n = f'{comp_list[0]}.settings'
-    r1 = cb.get(n)
-    companySettings = {n: r1.value}
+    # n = f'{comp_list[0]}.settings'
+    # r1 = cb.get(n)
+    # companySettings = {n: r1.value}
     # comp_list = get_companies_by_type('CUSTOMER')
     # comp_list = comp_list[400:405]
     # for type in companyTypes:
@@ -303,8 +332,11 @@ def read_data_for_migration(comp_list, dir):
 
     read_batch_to_migrate_from_db(comp_list)
     failed_reads.close()
+    write_company_settings()
 
 
 
-# if __name__ == '__main__':
-#     main()
+# if __name__=='__main__':
+#     dir = 'greenwood'
+#     comp_list = ['1282969819443079556']
+#     read_data_for_migration(comp_list, dir)

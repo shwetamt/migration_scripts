@@ -20,11 +20,11 @@ channel_ready_future = grpc.channel_ready_future(channel)
 channel_ready_future.result(timeout=10)
 stub = DocServiceStub(channel)
 
-cbhost = '10.11.120.220:8091'
-cb = Bucket('couchbase://' + cbhost + '/ce', username='mindtickle', password='testcb6mindtickle')
+# cbhost = '10.11.120.220:8091'
+# cb = Bucket('couchbase://' + cbhost + '/ce', username='mindtickle', password='testcb6mindtickle')
 
-# cbhost = 'cb6-node-1-staging.mindtickle.com:8091'
-# cb = Bucket('couchbase://' + cbhost + '/ce', username='couchbase', password='couchbase')
+cbhost = 'cb6-node-1-staging.mindtickle.com:8091'
+cb = Bucket('couchbase://' + cbhost + '/ce', username='couchbase', password='couchbase')
 
 companyTypes = ['CUSTOMER', 'PROSPECT', 'QA', 'DEV', 'UNKNOWN', 'DELETED']
 
@@ -197,7 +197,7 @@ def get_picasso_type(mime_type):
 
 def get_audio_division(type, media):
     if type == '.vtt':
-        return media.get('language', '')
+        return media.get('language', 'en-us')
     elif type == '.out' or type == '.json':
         return "RAW"
     elif type == '.mp3':
@@ -235,7 +235,7 @@ def get_audio_representation_name(type):
         return 'FLAC'
     elif type == '.vtt':
         return 'AUTO_SUBTITLE'
-    elif type == '.out' or type == 'json':
+    elif type == '.out' or type == '.json':
         return 'TRANSCRIPTION'
     # elif type == '.pdf':
     #     return 'PDF'
@@ -244,7 +244,7 @@ def get_audio_representation_name(type):
 
 def get_document_division(type, media):
     if type == '.vtt':
-        return media.get('language', '')
+        return media.get('language', 'en-us')
     elif type == '.out' or type == '.json':
         return 'RAW'
     elif type == '.pdf':
@@ -402,7 +402,7 @@ async def map_company_data(comp_id):
                 type = original_media['type']
                 picasso_type = type
                 if type == 'DOCUMENT':
-                    picasso_type = get_picasso_type(original_media['subtype'])
+                    picasso_type = get_picasso_type(original_media['mimeType'])
                 picasso_obj = get_media(mediaId, org_id, company_id, uploaded_by_id, original_media['id'], original_media['name'], picasso_type)
                 sub_medias = media_obj['sub_media']
 
