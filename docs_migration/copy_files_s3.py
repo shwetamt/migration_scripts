@@ -1,6 +1,13 @@
 import boto3
 import os, csv
 import re
+import asyncio
+import concurrent.futures
+from awscli.clidriver import create_clidriver
+import multiprocessing as mp
+driver = create_clidriver()
+# driver.main('s3 mv s3://testing-copy-two s3://testing-copy-three --recursive'.split())
+
 
 s3_resource = boto3.resource('s3')
 s3 = boto3.client("s3")
@@ -50,31 +57,34 @@ def load_companies_for_mapping():
     return comp
 
 
-def copy_to_folder(obj, already_copied):
-    print(f'copying folder for {obj}')
+def copy_to_folder(row, q1, q2):
+    from_fol = row[1].split('/')
+    from_folder = "/".join(from_fol[:len(from_fol) - 1])
+    to_fol = row[3].split('/')
+    to_folder = "/".join(to_fol[:len(to_fol) - 1])
+    from_bucket = row[0]
+    to_bucket = row[2]
     try:
-        response = s3.list_objects(
-            Bucket=obj['from_bucket'],
-            Prefix=obj['from_folder'])
-        from_folder = obj['from_folder']
-        to_folder = obj['to_folder']
+        resp = driver.main(
+            ['s3', 'cp', f's3://{from_bucket}/{from_folder}', f's3://{to_bucket}/{to_folder}', '--recursive',
+             '--only-show-errors'])
+        if resp != 0:
+            raise Exception("resp from driver not 0")
     except Exception as e:
-        print(f'Exception while accesing folder contents - {e}')
-        raise Exception(f'Exception while accesing folder contents - {e}')
-    objects_list = response.get('Contents', [])
-    paths = []
-    for s3_obj in objects_list:
-        key = s3_obj['Key']
-        if key in already_copied:
-            continue
-        root = key.split('/')
-        sub = from_folder.split('/')
-        suff = "/".join(root[len(sub):])
-        mod_obj = {'from_bucket': obj['from_bucket'], 'from_file': key, 'to_bucket': obj['to_bucket'], 'to_file': f'{to_folder}/{suff}'}
-        copy_to_bucket(mod_obj)
-        paths.append([obj['from_bucket'], key, obj['to_bucket'], f'{to_folder}/{suff}'])
-        print(f'sucess - {mod_obj}')
-    return paths
+        q2.put(row+[e])
+        return
+
+    try:
+        result = s3.list_objects(Bucket=to_bucket, Prefix=to_folder)
+        # s3_resource.Object(to_bucket, to_folder).load()
+        if 'Contents' in result:
+            q1.put(row)
+            print(f'success - {row}')
+        else:
+            raise Exception("object not copied")
+    except Exception as e:
+        q2.put(row+[e])
+        print(f'Exception - {row} - {e}')
 
 
 # def tt():
@@ -83,50 +93,123 @@ def copy_to_folder(obj, already_copied):
 #                        '817283497610854710/1556724340655DruvaPhoenixWhiteboardPitchScoreSheetv3.xlsx').download_file(
 #         f'/{current_dir}/test_boto')
 
-def copy_to_bucket(obj):
-    copy_source = {
-        'Bucket': obj['from_bucket'],
-        'Key': obj['from_file']
-    }
-    s3_resource.Object(obj['to_bucket'], obj['to_file']).copy(copy_source)
+# async def copy_to_bucket(obj):
+#     copy_source = {
+#         'Bucket': obj['from_bucket'],
+#         'Key': obj['from_file']
+#     }
+#     s3_resource.Object(obj['to_bucket'], obj['to_file']).copy(copy_source)
+
+
+def copy_to_bucket(row, q1, q2):
+    try:
+        resp = driver.main(['s3','cp', f's3://{row[0]}/{row[1]}', f's3://{row[2]}/{row[3]}', '--only-show-errors'])
+        if resp != 0:
+            raise Exception("resp from driver not 0")
+    except Exception as e:
+        q2.put(row+[e])
+        return
+
+    try:
+        s3_resource.Object(row[2], row[3]).load()
+        q1.put(row)
+        print(f'success - {row}')
+    except Exception as e:
+        q2.put(row+[e])
+        print(f'Exception - {row} - {e}')
+
+
+
+def success_listener(comp_id, q):
+    copied_path = get_dir("copied_object_paths", sub_dir)
+    with open(f'{copied_path}/copied_object_paths_{comp_id}.csv', 'a') as f:
+        copied_writer = csv.writer(f)
+        while 1:
+            m = q.get()
+            if m == 'kill':
+                break
+            copied_writer.writerow(m)
+
+
+
+
+def failed_listener(comp_id, q):
+    failed_path = get_dir("failed_object_paths", sub_dir)
+    with open(f'{failed_path}/failed_object_paths_{comp_id}.csv', 'w') as f:
+        failed_writer = csv.writer(f)
+        while 1:
+            m = q.get()
+            if m == 'kill':
+                break
+            failed_writer.writerow(m)
+
+
+
+def process_batch(batch, already_copied, q1, q2):
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            for row in batch:
+                if row[1] in already_copied:
+                    continue
+                if row[1].endswith('{image_num}.png'):
+                    executor.submit(copy_to_folder, row, q1, q2)
+                else:
+                    executor.submit(copy_to_bucket, row, q1, q2)
+    except KeyboardInterrupt:
+        import atexit
+        atexit.unregister(concurrent.futures.thread._python_exit)
+        print('Keyboard interrupt...exiting')
 
 
 
 def copy_paths_by_company(comp_id):
-    path = get_dir("object_paths", sub_dir)
-    if not os.path.exists(f'{path}/object_paths_{comp_id}.csv'):
-        print(f'Exception while opening file for {comp_id}')
-        return
-    print(f'Start copying files for company - {comp_id}')
-    failed_path = get_dir("failed_object_paths", sub_dir)
-    copied_path = get_dir("copied_object_paths", sub_dir)
-    already_copied = get_already_copied_paths(comp_id)
-    with open(f'{path}/object_paths_{comp_id}.csv') as f1, open(f'{failed_path}/failed_object_paths_{comp_id}.csv', 'w') as f2, open(f'{copied_path}/copied_object_paths_{comp_id}.csv', 'a') as f3:
-        path_reader= csv.reader(f1)
-        failed_writer = csv.writer(f2)
-        copied_writer = csv.writer(f3)
-        for row in path_reader:
-            if row[1] in already_copied:
-                continue
+    try:
+        path = get_dir("object_paths", sub_dir)
+        if not os.path.exists(f'{path}/object_paths_{comp_id}.csv'):
+            print(f'Exception while opening file for {comp_id}')
+            return
+        print(f'Start copying files for company - {comp_id}')
+        already_copied = get_already_copied_paths(comp_id)
+        jobs = []
+        with open(f'{path}/object_paths_{comp_id}.csv') as f1:
+            path_reader = csv.reader(f1)
             try:
-                if row[1].endswith('{image_num}.png'):
-                    from_fol = row[1].split('/')
-                    from_fol = "/".join(from_fol[:len(from_fol)-1])
-                    to_fol = row[3].split('/')
-                    to_fol = "/".join(to_fol[:len(to_fol) - 1])
-                    obj = {'from_bucket': row[0], 'from_folder': from_fol, 'to_bucket': row[2], 'to_folder': to_fol}
-                    paths = copy_to_folder(obj, already_copied)
-                    if len(paths)>0:
-                        copied_writer.writerows(paths)
-                else:
-                    obj = {'from_bucket': row[0], 'from_file': row[1], 'to_bucket': row[2], 'to_file': row[3]}
-                    copy_to_bucket(obj)
+                manager = mp.Manager()
+                queues = []
+                q1 = manager.Queue()
+                q2 = manager.Queue()
+                pool = mp.Pool(mp.cpu_count()+2)
 
-                copied_writer.writerow(row)
-                print(f'success - {obj}')
-            except Exception as e:
-                failed_writer.writerow(row+[e])
-                print(f'Exception while copying file/files for - {obj} - {e}')
+                queues.append(pool.apply_async(success_listener, (comp_id,q1)))
+                queues.append(pool.apply_async(failed_listener, (comp_id,q2)))
+                batch = []
+                batch_size = 0
+                for row in path_reader:
+                    batch_size += 1
+                    batch.append(row)
+                    if batch_size == 100:
+                        jobs.append(pool.apply_async(process_batch, (batch,already_copied, q1, q2)))
+                        batch = []
+                        batch_size = 0
+                if batch_size>0:
+                    jobs.append(pool.apply_async(process_batch, (batch, already_copied, q1, q2)))
+
+                for job in jobs:
+                    job.get()
+
+                q1.put('kill')
+                q2.put('kill')
+                for que in queues:
+                    que.get()
+                pool.close()
+                pool.join()
+            except Exception:
+                import atexit
+                atexit.unregister(concurrent.futures.thread._python_exit)
+                pool.close()
+                pool.terminate()
+    except Exception as e:
+        print(f'Exception while copying file/files for - {comp_id} - {e}')
     print(f'Copied files for company - {comp_id}')
 
 
@@ -141,6 +224,12 @@ def copy_object_paths(comp_list,dir):
         copy_paths_by_company(comp)
     print(f'Completed copying paths')
 
+
+
+# if __name__=='__main__':
+#     comp = []
+#     dir = ''
+#     copy_object_paths(comp, dir)
 
 
 # if __name__=='__main__':

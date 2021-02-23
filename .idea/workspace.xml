@@ -1,7 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="a7386038-6e9b-415e-9b62-66dec4ec5b48" name="Default Changelist" comment="" />
+    <list default="true" id="a7386038-6e9b-415e-9b62-66dec4ec5b48" name="Default Changelist" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs_migration/copy_files_s3.py" beforeDir="false" afterPath="$PROJECT_DIR$/docs_migration/copy_files_s3.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs_migration/docs_data_read_from_cb.py" beforeDir="false" afterPath="$PROJECT_DIR$/docs_migration/docs_data_read_from_cb.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs_migration/docs_mapping_from_infra_to_picasso.py" beforeDir="false" afterPath="$PROJECT_DIR$/docs_migration/docs_mapping_from_infra_to_picasso.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs_migration/docs_mapping_to_infra.py" beforeDir="false" afterPath="$PROJECT_DIR$/docs_migration/docs_mapping_to_infra.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs_migration/greenwoodTest/downloaded_companies_media/downloaded_1282969819443079556.csv" beforeDir="false" afterPath="$PROJECT_DIR$/docs_migration/greenwoodTest/downloaded_companies_media/downloaded_1282969819443079556.csv" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs_migration/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/docs_migration/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs_migration/update_cb_object.py" beforeDir="false" afterPath="$PROJECT_DIR$/docs_migration/update_cb_object.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs_migration/update_flags_cb.py" beforeDir="false" afterPath="$PROJECT_DIR$/docs_migration/update_flags_cb.py" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -64,6 +74,8 @@
       <workItem from="1608056962469" duration="4000" />
       <workItem from="1608791012397" duration="1369000" />
       <workItem from="1612157601329" duration="76000" />
+      <workItem from="1612783731410" duration="1245000" />
+      <workItem from="1613373172561" duration="807000" />
     </task>
     <servers />
   </component>

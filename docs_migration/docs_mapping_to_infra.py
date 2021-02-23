@@ -14,17 +14,20 @@ from tickleDb.document_pb2 import ModifyDocsRequest, CreateDocsRequest, Doc
 from tickleDb.document_pb2_grpc import DocServiceStub
 import shutil
 
-TICKLE_DB_URL = 'tickledbdocservice.internal-grpc.titos.mindtickle.com:80'
+TICKLE_DB_URL = 'tickledbdocservice.internal-grpc.prod.mindtickle.com:80'
+# TICKLE_DB_URL = 'tickledbdocservice.internal-grpc.staging.mindtickle.com:80'
+# TICKLE_DB_URL = 'tickledbdocservice.internal-grpc.titos.mindtickle.com:80'
 channel = grpc.insecure_channel(TICKLE_DB_URL)
 channel_ready_future = grpc.channel_ready_future(channel)
-channel_ready_future.result(timeout=10)
+channel_ready_future.result(timeout=20)
 stub = DocServiceStub(channel)
 
 # cbhost = '10.11.120.220:8091'
 # cb = Bucket('couchbase://' + cbhost + '/ce', username='mindtickle', password='testcb6mindtickle')
 
-cbhost = 'cb6-node-1-staging.mindtickle.com:8091'
-cb = Bucket('couchbase://' + cbhost + '/ce', username='couchbase', password='couchbase')
+# cbhost = 'cb6-node-1-staging.mindtickle.com:8091'
+# cbhost = 'cb-backup-ce-node-1.internal.mindtickle.com:8091'
+# cb = Bucket('couchbase://' + cbhost + '/ce', username='couchbase', password='couchbase')
 
 
 companyTypes = ['CUSTOMER', 'PROSPECT', 'QA', 'DEV', 'UNKNOWN', 'DELETED']
@@ -37,7 +40,7 @@ base_name = 'documents_media'
 sub_dir = ''
 failed_db_writer = ''
 path_writer = ''
-
+invalid_data_writer = ''
 
 def get_dir(prefix, sub_dir):
     current_dir = os.getcwd()
@@ -56,8 +59,8 @@ collections = {
 
 picasso_bucket = {
     1: 'mt-picasso-asia-singapore',
-    2: 'mt-picasso-eu-ireland',
-    3: 'mt-picasso-us-east',
+    2: 'mt-picasso-us-east',
+    3: 'mt-picasso-eu-ireland'
 }
 
 
@@ -84,6 +87,38 @@ croco_bucket = {
     2: "mtdocs-us-conversion",
     3: "mtdocs-eu-conversion"
 }
+
+# picasso_bucket = {
+#     1: 'mt-picasso-asia-singapore-staging',
+#     2: 'mt-picasso-us-east-staging',
+#     3: 'mt-picasso-eu-ireland-staging'
+# }
+#
+#
+# region_bucket = {
+#     1: "mtgame-cdn-staging.mindtickle.com",
+#     2: "mtgame-us-staging.mindtickle.com",
+#     3: "mtgame-eu-staging.mindtickle.com"
+# }
+#
+# streaming_bucket = {
+#     1: "mtstreaming-cdn-staging.mindtickle.com",
+#     2: "mtgame-us-staging.mindtickle.com",
+#     3: "mtgame-eu-staging.mindtickle.com"
+# }
+#
+# box_bucket = {
+#     1: 'mtdocs-box-processed-staging',
+#     2: "mtdocs-us-box-processed-staging",
+#     3: "mtdocs-eu-box-processed-staging"
+# }
+#
+# croco_bucket = {
+#     1: "mtdocs-conversion-staging",
+#     2: "mtdocs-us-conversion-staging",
+#     3: "mtdocs-eu-conversion-staging"
+# }
+
 
 region_cdn = {
     1: "ap-southeast-1",
@@ -127,7 +162,7 @@ def get_media_object(cb_obj, comp_obj, media_type = ''):
     mapped_obj["authorizer"] = user_id
     mapped_obj["source"] = 'content-engine-migration'
     mapped_obj["region"] = region_cdn[cdnId]
-    mapped_obj['name'] = media_obj.get('title', '')
+    mapped_obj['name'] = media_obj.get('title', 'Untitled')
     return mapped_obj
 
 
@@ -189,19 +224,25 @@ def get_audio_objects(cb_obj):
     if 'mp3Path' in media_obj and media_obj['mp3Path'] is not None:
         mapped_dict['sub_media'].append(get_mapped_audio_obj(get_media_object(cb_obj, comp_obj, 'AUDIO'), media_obj, ".mp3", streaming_bucket[cdn], media_obj.get('mp3Path'), cdn))
 
-    if 'flacPath' in media_obj and media_obj['flacPath'] is not None:
-        mapped_dict['sub_media'].append(get_mapped_audio_obj(get_media_object(cb_obj, comp_obj, 'AUDIO'), media_obj, ".flac", region_bucket[cdn], media_obj.get('flacPath'), cdn))
+    if 'transcriptionStatus' in media_obj and media_obj['transcriptionStatus'] == 'SUCCESS':
+        if 'flacPath' in media_obj and media_obj['flacPath'] is not None:
+            mapped_dict['sub_media'].append(
+                get_mapped_audio_obj(get_media_object(cb_obj, comp_obj, 'AUDIO'), media_obj, ".flac",
+                                     region_bucket[cdn], media_obj.get('flacPath'), cdn))
 
-    if 'vttSubtitlePath' in media_obj and media_obj['vttSubtitlePath'] is not None:
-        mapped_dict['sub_media'].append(get_subtitle_media(get_media_object(cb_obj, comp_obj, 'DOCUMENT'), media_obj, region_bucket[cdn], media_obj.get('vttSubtitlePath'), cdn))
+        if 'vttSubtitlePath' in media_obj and media_obj['vttSubtitlePath'] is not None:
+            mapped_dict['sub_media'].append(
+                get_subtitle_media(get_media_object(cb_obj, comp_obj, 'DOCUMENT'), media_obj, region_bucket[cdn],
+                                   media_obj.get('vttSubtitlePath'), cdn))
 
-    # if 'flacPath' in media_obj and media_obj['flacPath'] is not None:
-    #   mobj = copy.deepcopy(mapped_obj)
-    #   mapped_list.append(get_mapped_audio_obj(mobj, media_obj, media_obj.get('flacPath')))
+        # if 'flacPath' in media_obj and media_obj['flacPath'] is not None:
+        #   mobj = copy.deepcopy(mapped_obj)
+        #   mapped_list.append(get_mapped_audio_obj(mobj, media_obj, media_obj.get('flacPath')))
 
-    if 'transcriptPath' in media_obj and media_obj['transcriptPath'] is not None:
-        mapped_dict['sub_media'].append(
-            get_transcription_media(get_media_object(cb_obj, comp_obj, 'DOCUMENT'), media_obj, region_bucket[cdn], media_obj.get('transcriptPath'), cdn))
+        if 'transcriptPath' in media_obj and media_obj['transcriptPath'] is not None:
+            mapped_dict['sub_media'].append(
+                get_transcription_media(get_media_object(cb_obj, comp_obj, 'DOCUMENT'), media_obj, region_bucket[cdn],
+                                        media_obj.get('transcriptPath'), cdn))
     #
     # if (audio.vttSubtitlePath != null) {
     # audio.vttSubtitlePath = generateCloudFrontUrlString(region, audio.vttSubtitlePath, BucketType.OTHERS, expiry);
@@ -232,7 +273,7 @@ def get_mapped_audio_obj(mapped_obj, media_obj, mime_key, bucket, s3key, cdn):
     new_key = f'{org_id}/{comp_id}/{id}/{file}'
     new_bucket = picasso_bucket[cdn]
     path_writer.writerow([bucket, s3key, new_bucket, new_key])
-    mapped_obj['original_path'] = s3key
+    mapped_obj['srcS3Key'] = s3key
     mapped_obj["key"] = new_key
     mapped_obj["bucket"] = new_bucket
     mapped_obj["type"] = 'AUDIO'
@@ -246,7 +287,6 @@ def get_mapped_audio_obj(mapped_obj, media_obj, mime_key, bucket, s3key, cdn):
     mapped_obj["locationError"] = ''
     mapped_obj["metadataError"] = ''
     mapped_obj["durationSeconds"] = str(media_obj.get('contentParts', 0))
-    # mapped_obj["srcS3Key"]
     mapped_obj["mimeType"] = mime_key    #ext .flac .mp3
     mapped_obj["language"] = ''
     return mapped_obj
@@ -268,7 +308,7 @@ def get_mapped_document_obj(mapped_obj, media_obj, mime_type, bucket, s3key, cdn
     new_key = f'{org_id}/{comp_id}/{id}/{file}'
     new_bucket = picasso_bucket[cdn]
     path_writer.writerow([bucket, s3key, new_bucket, new_key])
-    mapped_obj['original_path'] = s3key
+    mapped_obj['srcS3Key'] = s3key
     mapped_obj["key"] = new_key
     mapped_obj["bucket"] = new_bucket
     mapped_obj["type"] = 'DOCUMENT'
@@ -294,7 +334,7 @@ def get_mapped_image_object(mapped_obj, media_obj, bucket, s3key, cdn):
     new_key = f'{org_id}/{comp_id}/{id}/{file}'
     new_bucket = picasso_bucket[cdn]
     path_writer.writerow([bucket, s3key, new_bucket, new_key])
-    mapped_obj['original_path'] = s3key
+    mapped_obj['srcS3Key'] = s3key
     mapped_obj["key"] = new_key
     mapped_obj["bucket"] = new_bucket
     mapped_obj["type"] = 'IMAGE'
@@ -319,7 +359,7 @@ def get_mapped_catalogue_object(mapped_obj, media_obj, bucket, s3key, cdn):
     new_key = f'{org_id}/{comp_id}/{id}/out_'+ '{image_num}.png'
     new_bucket = picasso_bucket[cdn]
     path_writer.writerow([bucket, s3key, new_bucket, new_key])
-    mapped_obj['original_path'] = s3key
+    mapped_obj['srcS3Key'] = s3key
     mapped_obj["key"] = new_key
     mapped_obj["bucket"] = new_bucket
     mapped_obj["type"] = 'CATALOGUE'
@@ -344,7 +384,7 @@ def get_subtitle_media(mapped_obj, media_obj, bucket, s3key, cdn):
     new_key = f'{org_id}/{comp_id}/{id}/{file}'
     new_bucket = picasso_bucket[cdn]
     path_writer.writerow([bucket, s3key, new_bucket, new_key])
-    mapped_obj['original_path'] = s3key
+    mapped_obj['srcS3Key'] = s3key
     mapped_obj["key"] = new_key
     mapped_obj["bucket"] = new_bucket
     mapped_obj["type"] = 'DOCUMENT'
@@ -369,7 +409,7 @@ def get_transcription_media(mapped_obj, media_obj, bucket, s3key, cdn):
     new_key = f'{org_id}/{comp_id}/{id}/{file}'
     new_bucket = picasso_bucket[cdn]
     path_writer.writerow([bucket, s3key, new_bucket, new_key])
-    mapped_obj['original_path'] = s3key
+    mapped_obj['srcS3Key'] = s3key
     mapped_obj["key"] = new_key
     mapped_obj["bucket"] = new_bucket
     mapped_obj["type"] = 'DOCUMENT'
@@ -405,7 +445,7 @@ def get_doc_mime(path, type):
     if ext == 'pdf':
         return ".pdf"
     elif ext == "vtt":
-        return "vtt"
+        return ".vtt"
     elif ext == 'ppt' or ext == 'pptx':
         return ".ppt"
     elif ext == 'doc' or ext == 'docx':
@@ -441,27 +481,27 @@ def get_document_objects(cb_obj):
             uuid = media_obj.get('uuid', '')
             pdf = get_mapped_document_obj(get_media_object(cb_obj, comp_obj, 'DOCUMENT'), media_obj, '.pdf', croco_bucket[cdn],
                                           uuid + "/doc.pdf", cdn)
-            thumb = get_mapped_image_object(get_media_object(cb_obj, comp_obj, 'IMAGE'), media_obj, croco_bucket[cdn],
-                                            uuid + "/images/thumbnail-master-0.png", cdn)
+            # thumb = get_mapped_image_object(get_media_object(cb_obj, comp_obj, 'IMAGE'), media_obj, croco_bucket[cdn],
+            #                                 uuid + "/images/thumbnail-master-0.png", cdn)
             mapped_dict['sub_media'].append(pdf)
-            mapped_dict['sub_media'].append(thumb)
+            # mapped_dict['sub_media'].append(thumb)
 
         else:
             pdf = get_mapped_document_obj(get_media_object(cb_obj, comp_obj, 'DOCUMENT'), media_obj, '.pdf',box_bucket[cdn],
                                           obj_id + "/doc.pdf", cdn)
-            thumb = get_mapped_image_object(get_media_object(cb_obj, comp_obj, 'IMAGE'), media_obj, box_bucket[cdn],
-                                            obj_id + "/images/thumbnail-master-0.png", cdn)
+            # thumb = get_mapped_image_object(get_media_object(cb_obj, comp_obj, 'IMAGE'), media_obj, box_bucket[cdn],
+            #                                 obj_id + "/images/thumbnail-master-0.png", cdn)
             mapped_dict['sub_media'].append(pdf)
-            mapped_dict['sub_media'].append(thumb)
+            # mapped_dict['sub_media'].append(thumb)
 
     if media_obj.get('docProcessor') == 'HTML_PDF_LAMBDA':
         pdf = get_mapped_document_obj(get_media_object(cb_obj, comp_obj, 'DOCUMENT'), media_obj, '.pdf',
                                       region_bucket[cdn],
                                       original_path + "/doc.pdf", cdn)
-        thumb = get_mapped_image_object(get_media_object(cb_obj, comp_obj, 'IMAGE'), media_obj, croco_bucket[cdn],
-                                        original_path + "/imagified/out_1.png", cdn)
+        # thumb = get_mapped_image_object(get_media_object(cb_obj, comp_obj, 'IMAGE'), media_obj, croco_bucket[cdn],
+        #                                 original_path + "/imagified/out_1.png", cdn)
         mapped_dict['sub_media'].append(pdf)
-        mapped_dict['sub_media'].append(thumb)
+        # mapped_dict['sub_media'].append(thumb)
 
     if media_obj.get('imagifiedStatus') == "IMAGIFIED_SUCCESS":
         # content_parts = media_obj.get('contentParts', 0)
@@ -535,13 +575,13 @@ async def migrate_company(comp_id):
         print(f'media does not exist for comp - {comp_id}')
         return
     status = [0, 5, 6, 22]
-    global path_writer
+    global path_writer, invalid_data_writer
     dir = get_dir('object_paths', sub_dir)
     obj_paths_file = open(f'{dir}/object_paths_{comp_id}.csv', 'a')
     path_writer = csv.writer(obj_paths_file)
     failed_media = get_dir("failed_infra", sub_dir)
     migrated_media = get_dir("migrated_infra", sub_dir)
-    mig_except = 0
+    # mig_except = 0
     already_procesed = get_already_processed_media(comp_id)
 
     with open(f'{migrated_media}/migrated_infra_{comp_id}.csv', 'a') as f1, open(f'{failed_media}/failed_infra_{comp_id}.csv', 'w') as f2, open(f'{downloaded_media}/downloaded_{comp_id}.csv') as f3:
@@ -558,7 +598,10 @@ async def migrate_company(comp_id):
             cb_obj = json.loads(row[0])
             if cb_obj['id'] in already_procesed:
                 continue
+            already_procesed.add(cb_obj['id'])
             if cb_obj['ce'].get('status', 0) not in status:
+                failed_writer.writerow([raw_obj, f"STATUS - {cb_obj['ce'].get('status', 0)}"])
+                # invalid_data_writer.writerow([comp_id, 'STATUS', cb_obj['ce'].get('status', 0)])
                 continue
             try:
                 ce_obj = cb_obj['ce']
@@ -599,6 +642,7 @@ async def migrate_company(comp_id):
                     # else:
                     #     raise Exception("create media failed")
                     mig_writer.writerows([[obj] for obj in mapped_medias])
+                    print(f'create infra media request success for company {comp_id} medias - batch - {medias}')
 
                 except Exception as e:
                     failed_writer.writerows([[obj, str(e)] for obj in medias])
@@ -621,16 +665,17 @@ async def migrate_company(comp_id):
                 # else:
                 #     raise Exception("create media failed")
                 mig_writer.writerows([[obj] for obj in mapped_medias])
+                print(f'create infra media request success for company {comp_id} medias - batch - {medias}')
 
             except Exception as e:
                 failed_writer.writerows([[obj, str(e)] for obj in medias])
                 print(f'create infra media request failed for company {comp_id} - batch - {medias}, Exception - {e}')
                 logging.debug(f'create infra media request failed for company {comp_id} - batch - {medias}, Exception - {e}')
-                mig_except = 1
+                # mig_except = 1
 
     obj_paths_file.close()
-    if mig_except==0 and os.path.exists(f'{failed_media}/failed_infra_{comp_id}.csv'):
-        os.remove(f'{failed_media}/failed_infra_{comp_id}.csv')
+    # if mig_except==0 and os.path.exists(f'{failed_media}/failed_infra_{comp_id}.csv'):
+    #     os.remove(f'{failed_media}/failed_infra_{comp_id}.csv')
 
     print(f'Migration completed for company - {comp_id}')
 
@@ -716,14 +761,24 @@ def load_company_settings():
 
 
 async def migrate_media_by_company(companies_list=[]):
+    global invalid_data_writer
     # global processed_companies
     # companies_list = processed_companies
     print(f'Start migrating companies to infra media')
     tasks = []
     for comp_id in companies_list:
-        if companySettings.get(f'{comp_id}.settings') is None:
-            continue
-        tasks.append(migrate_company(comp_id))
+        # path = get_dir('invalid_data', sub_dir)
+        # file = os.path.join(path, f'invalid_data_{comp_id}.csv')
+        # invalid_reads = open(file, 'a')
+        # invalid_data_writer = csv.writer(invalid_reads)
+        try:
+            if companySettings.get(f'{comp_id}.settings') is None:
+                continue
+            # companySettings[f'{comp_id}.settings']['orgId'] += '556677'
+            tasks.append(migrate_company(comp_id))
+        except Exception as e:
+            print(f'Exception while migrating data - {comp_id} - {e}')
+        # invalid_reads.close()
     await asyncio.gather(*tasks)
     print(f'Migration completed')
 

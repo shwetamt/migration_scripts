@@ -14,17 +14,20 @@ from tickleDb.document_pb2 import ModifyDocsRequest, CreateDocsRequest, Doc
 from tickleDb.document_pb2_grpc import DocServiceStub
 import shutil
 
-TICKLE_DB_URL = 'tickledbdocservice.internal-grpc.titos.mindtickle.com:80'
+TICKLE_DB_URL = 'tickledbdocservice.internal-grpc.prod.mindtickle.com:80'
+# TICKLE_DB_URL = 'tickledbdocservice.internal-grpc.staging.mindtickle.com:80'
+# TICKLE_DB_URL = 'tickledbdocservice.internal-grpc.titos.mindtickle.com:80'
 channel = grpc.insecure_channel(TICKLE_DB_URL)
 channel_ready_future = grpc.channel_ready_future(channel)
-channel_ready_future.result(timeout=10)
+channel_ready_future.result(timeout=20)
 stub = DocServiceStub(channel)
 
 # cbhost = '10.11.120.220:8091'
 # cb = Bucket('couchbase://' + cbhost + '/ce', username='mindtickle', password='testcb6mindtickle')
 
-cbhost = 'cb6-node-1-staging.mindtickle.com:8091'
-cb = Bucket('couchbase://' + cbhost + '/ce', username='couchbase', password='couchbase')
+# cbhost = 'cb6-node-1-staging.mindtickle.com:8091'
+# cbhost = 'cb-backup-ce-node-1.internal.mindtickle.com:8091'
+# cb = Bucket('couchbase://' + cbhost + '/ce', username='couchbase', password='couchbase')
 
 companyTypes = ['CUSTOMER', 'PROSPECT', 'QA', 'DEV', 'UNKNOWN', 'DELETED']
 
@@ -33,6 +36,7 @@ mediaTypes = list(docs.keys())
 
 base_name = 'documents_media'
 sub_dir = ''
+invalid_data_writer = ''
 
 collections = {
   'picasso_media': 'picasso_media',
@@ -192,7 +196,7 @@ def get_picasso_type(mime_type):
         return 'DOCUMENT_EXCEL'
     elif mime_type == '.pdf':
         return 'DOCUMENT_PDF'
-    return 'UNDEFINED'
+    raise Exception('picasso type UNDEFINED')
 
 
 def get_audio_division(type, media):
@@ -204,7 +208,7 @@ def get_audio_division(type, media):
         return 'MP3'
     elif type == '.flac':
         return 'FLAC'
-    return 'UNDEFINED'
+    raise Exception('audio divison UNDEFINED')
 
 
 def get_document_representation_name(type):
@@ -225,7 +229,7 @@ def get_document_representation_name(type):
     #     return 'XLS'
     elif type == 'CATALOGUE':
         return 'IMAGE'
-    return 'UNDEFINED'
+    raise Exception('document representation name UNDEFINED')
 
 
 def get_audio_representation_name(type):
@@ -239,7 +243,7 @@ def get_audio_representation_name(type):
         return 'TRANSCRIPTION'
     # elif type == '.pdf':
     #     return 'PDF'
-    return 'UNDEFINED'
+    raise Exception('audio representation UNDEFINED')
 
 
 def get_document_division(type, media):
@@ -248,98 +252,118 @@ def get_document_division(type, media):
     elif type == '.out' or type == '.json':
         return 'RAW'
     elif type == '.pdf':
-        return 'RAW'
-    elif type == '.doc' or type == '.docx':
-        return 'RAW'
-    elif type == '.ppt' or type == '.pptx':
-        return 'RAW'
-    elif type == 'XLS':
-        return 'RAW'
+        return 'PDF'
+    # elif type == '.doc' or type == '.docx':
+    #     return 'RAW'
+    # elif type == '.ppt' or type == '.pptx':
+    #     return 'RAW'
+    # elif type == 'XLS':
+    #     return 'RAW'
     elif type == 'CATALOGUE':
-        return ''     # confirm divison
-    return 'UNDEFINED'
+        return 'IMAGE'     # confirm divison
+    raise Exception('document divison UNDEFINED')
 
 
 
-def get_infra_type(ext):
-    if ext == '.pdf':
-        return "PDF"
-    elif ext == ".vtt":
-        return "VTT"
-    elif ext == '.ppt' or ext == '.pptx':
-        return "PPT"
-    elif ext == '.doc' or ext == '.docx':
-        return "WORD"
-    elif ext == '.json':
-        return "JSON"
-    elif ext == ".xlsx" or ext == '.xls':
-        return "XLS"
+# def get_infra_type(ext):
+#     if ext == '.pdf':
+#         return "PDF"
+#     elif ext == ".vtt":
+#         return "VTT"
+#     elif ext == '.ppt' or ext == '.pptx':
+#         return "PPT"
+#     elif ext == '.doc' or ext == '.docx':
+#         return "WORD"
+#     elif ext == '.json':
+#         return "JSON"
+#     elif ext == ".xlsx" or ext == '.xls':
+#         return "XLS"
 
 
 
 def get_audio_representations(org_id, company_id, media_id, uploaded_by_id, sub_medias):
-    repr_list = []
-    repr_prop_list = []
-    for media in sub_medias:
-        mime_type = ''
-        division = ''
-        if media['type'] == 'AUDIO':
-            mime_type = media['mimeType']
-            division = get_audio_division(mime_type, media)   # flac
-        elif media['type'] == 'DOCUMENT':
-            mime_type = media['mimeType']
-            division = get_document_division(mime_type, media)  # divison diff - vtt -lang, trans - raw
+    try:
+        repr_list = []
+        repr_prop_list = []
+        for media in sub_medias:
+            mime_type = ''
+            division = ''
+            if media['type'] == 'AUDIO':
+                mime_type = media['mimeType']
+                division = get_audio_division(mime_type, media)  # flac
+            elif media['type'] == 'DOCUMENT':
+                mime_type = media['mimeType']
+                division = get_document_division(mime_type, media)  # divison diff - vtt -lang, trans - raw
 
-        representation_id = generate_representation_id(get_audio_representation_name(mime_type), media_id)
-        representation_media_object = get_representation(representation_id, org_id, company_id, uploaded_by_id,
-                                                         get_audio_representation_name(mime_type), media_id)
-        if len(representation_media_object) > 0:
-            repr_list.append(representation_media_object)
-        representation_properties_id = generate_representation_properties_id(get_audio_representation_name(mime_type),
-                                                                             media_id)
-        representation_property_object = get_representation_properties(representation_properties_id, org_id, company_id,
-                                                                       uploaded_by_id,
-                                                                       representation_media_object['id'], media['id'],
-                                                                       division)
-        if len(representation_property_object) > 0:
-            repr_prop_list.append(representation_property_object)
+            representation_id = generate_representation_id(get_audio_representation_name(mime_type), media_id)
+            representation_media_object = get_representation(representation_id, org_id, company_id, uploaded_by_id,
+                                                             get_audio_representation_name(mime_type), media_id)
+            if len(representation_media_object) > 0:
+                repr_list.append(representation_media_object)
+            representation_properties_id = generate_representation_properties_id(
+                get_audio_representation_name(mime_type),
+                media_id)
+            representation_property_object = get_representation_properties(representation_properties_id, org_id,
+                                                                           company_id,
+                                                                           uploaded_by_id,
+                                                                           representation_media_object['id'],
+                                                                           media['id'],
+                                                                           division)
+            if len(representation_property_object) > 0:
+                repr_prop_list.append(representation_property_object)
 
-    return repr_list, repr_prop_list
+        return repr_list, repr_prop_list
+    except Exception as e:
+        print(f'Exception while building picasso represntation object - {company_id} - {media_id} - {e}')
+        # invalid_data_writer.writerow([company_id, media_id, media['type'], media['mimeType'], e])
+        raise Exception(f'Exception while building picasso represntation object - {company_id} - {media_id} - {e}')
 
 
 
 def get_document_representations(org_id, company_id, media_id, uploaded_by_id, sub_medias):
-    repr_list = []
-    repr_prop_list = []
-    for media in sub_medias:
-        mime_type = ''
-        division = ''
-        if media['type'] == 'IMAGE':
-            mime_type = '.png'
-            division = 'THUMBNAIL'
-            continue
-        elif media['type'] == 'DOCUMENT':
-            mime_type = media['mimeType']
-            division = get_document_division(mime_type, media)  # divison diff - vtt -lang, trans - raw
-        elif media['type'] == 'CATALOGUE':
-            mime_type = 'CATALOGUE'
+    try:
+        repr_list = []
+        repr_prop_list = []
+        for media in sub_medias:
+            mime_type = ''
             division = ''
+            if media['type'] == 'IMAGE':
+                mime_type = '.png'
+                division = 'THUMBNAIL'
+                continue
+            elif media['type'] == 'DOCUMENT':
+                mime_type = media['mimeType']
+                division = get_document_division(mime_type, media)  # divison diff - vtt -lang, trans - raw
+            elif media['type'] == 'CATALOGUE':
+                mime_type = 'CATALOGUE'
+                division = 'IMAGE'
+            else:
+                # invalid_data_writer.writerow([company_id, 'TYPE NOT SUPPORTED', media_id, media['type']])
+                raise Exception(f'Exception while building picasso represntation object - {company_id} - {media_id} - TYPE NOT SUPPORTED')
 
-        representation_id = generate_representation_id(get_document_representation_name(mime_type), media_id)
-        representation_media_object = get_representation(representation_id, org_id, company_id, uploaded_by_id,
-                                                         get_document_representation_name(mime_type), media_id)
-        if len(representation_media_object) > 0:
-            repr_list.append(representation_media_object)
-        representation_properties_id = generate_representation_properties_id(get_document_representation_name(mime_type),
-                                                                             media_id)
-        representation_property_object = get_representation_properties(representation_properties_id, org_id, company_id,
-                                                                       uploaded_by_id,
-                                                                       representation_media_object['id'], media['id'],
-                                                                       division)
-        if len(representation_property_object) > 0:
-            repr_prop_list.append(representation_property_object)
+            representation_id = generate_representation_id(get_document_representation_name(mime_type), media_id)
+            representation_media_object = get_representation(representation_id, org_id, company_id, uploaded_by_id,
+                                                             get_document_representation_name(mime_type), media_id)
+            if len(representation_media_object) > 0:
+                repr_list.append(representation_media_object)
+            representation_properties_id = generate_representation_properties_id(
+                get_document_representation_name(mime_type),
+                media_id)
+            representation_property_object = get_representation_properties(representation_properties_id, org_id,
+                                                                           company_id,
+                                                                           uploaded_by_id,
+                                                                           representation_media_object['id'],
+                                                                           media['id'],
+                                                                           division)
+            if len(representation_property_object) > 0:
+                repr_prop_list.append(representation_property_object)
 
-    return repr_list, repr_prop_list
+        return repr_list, repr_prop_list
+    except Exception as e:
+        print(f'Exception while building picasso represntation object - {company_id} - {media_id} - {e}')
+        # invalid_data_writer.writerow([company_id, media_id, media['type'], media['mimeType'], e])
+        raise Exception(f'Exception while building picasso represntation object - {company_id} - {media_id} - {e}')
+
 
 
 
@@ -348,7 +372,8 @@ def get_media_representations(type, org_id, company_id, media_id, uploaded_by_id
         return get_document_representations(org_id, company_id, media_id, uploaded_by_id, sub_medias)
     elif type == "AUDIO":
         return get_audio_representations(org_id, company_id, media_id, uploaded_by_id, sub_medias)
-    return [], []
+    # invalid_data_writer.writerow([company_id, 'TYPE NOT SUPPORTED', media_id, type])
+    raise Exception(f'f{company_id} - {media_id} - {type} - NOT SUPPORTED')
 
 
 def get_already_processed_media(comp_id):
@@ -373,7 +398,7 @@ async def map_company_data(comp_id):
         return
     failed_mapping = get_dir("failed_picasso_mapping", sub_dir)
     successful_mapping = get_dir("successful_picasso_mapping", sub_dir)
-    mig_except = 0
+    # mig_except = 0
     already_processed = get_already_processed_media(comp_id)
 
     with open(f'{successful_mapping}/successful_picasso_mapping_{comp_id}.csv', 'a') as f1, open(f'{failed_mapping}/failed_picasso_mapping_{comp_id}.csv','w') as f2, open(f'{migrated_media}/migrated_infra_{comp_id}.csv') as f3:
@@ -394,6 +419,7 @@ async def map_company_data(comp_id):
                 mediaId = media_obj['id']
                 if mediaId in already_processed:
                     continue
+                already_processed.add(mediaId)
                 original_media = media_obj['original_media'][0]
                 org_id = media_obj['orgId']
                 company_id = media_obj['companyId']
@@ -407,6 +433,8 @@ async def map_company_data(comp_id):
                 sub_medias = media_obj['sub_media']
 
                 repr_list, repr_prop_list = get_media_representations(type, org_id, company_id, mediaId, uploaded_by_id, sub_medias)
+                if len(repr_list) == 0 or len(repr_list)!=len(repr_prop_list):
+                    raise Exception('not able to create picasso representations succesfullv')
 
             except Exception as e:
                 failed_writer.writerow([raw_obj, str(e)])
@@ -441,10 +469,11 @@ async def map_company_data(comp_id):
                         create_docs_request=create_media_request_list)
                     resp = stub.ModifyDocs(modifyDocsRequest)
                     success_writer.writerows([[obj] for obj in mapped_medias])
+                    print(f'create picasso media request success for company {comp_id} - batch - {medias}')
 
                 except Exception as e:
                     failed_writer.writerows([[obj, str(e)] for obj in medias])
-                    print(f'create infra media request failed for company {comp_id} - batch - {medias}, Exception - {e}')
+                    print(f'create picasso media request failed for company {comp_id} - batch - {medias}, Exception - {e}')
                     logging.debug(f'create infra media request failed for company {comp_id} - batch - {medias}, Exception - {e}')
                     mig_except = 1
 
@@ -474,25 +503,32 @@ async def map_company_data(comp_id):
                     create_docs_request=create_media_request_list)
                 resp = stub.ModifyDocs(modifyDocsRequest)
                 success_writer.writerows([[obj] for obj in mapped_medias])
+                print(f'create picasso media request success for company {comp_id} - batch - {medias}')
 
             except Exception as e:
                 failed_writer.writerows([[obj, str(e)] for obj in medias])
                 logging.debug(f'create infra media request failed for company {comp_id} - batch - {medias}, Exception - {e}')
                 print(f'create infra media request failed for company {comp_id} - batch - {medias}, Exception - {e}')
-                mig_except = 1
+                # mig_except = 1
 
-    if mig_except == 0 and os.path.exists(f'{failed_mapping}/failed_picasso_mapping_{comp_id}.csv'):
-        os.remove(f'{failed_mapping}/failed_picasso_mapping_{comp_id}.csv')
+    # if mig_except == 0 and os.path.exists(f'{failed_mapping}/failed_picasso_mapping_{comp_id}.csv'):
+    #     os.remove(f'{failed_mapping}/failed_picasso_mapping_{comp_id}.csv')
     print(f'Mapping completed for company - {comp_id}')
 
 
 async def map_media_data_by_company(companies_list=[]):
     # global processed_companies
     # companies_list = processed_companies
+    # global invalid_data_writer
     print(f'Start media mapping....')
     tasks = []
     for comp_id in companies_list:
+        # path = get_dir('invalid_data', sub_dir)
+        # file = os.path.join(path, f'invalid_data_{comp_id}.csv')
+        # invalid_reads = open(file, 'a')
+        # invalid_data_writer = csv.writer(invalid_reads)
         tasks.append(map_company_data(comp_id))
+        # invalid_reads.close()
     await asyncio.gather(*tasks)
     print('Mapping completed')
 

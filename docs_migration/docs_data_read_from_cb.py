@@ -9,17 +9,22 @@ import json
 import os
 from tickleDb.document_pb2_grpc import DocServiceStub
 
-TICKLE_DB_URL = 'tickledbdocservice.internal-grpc.titos.mindtickle.com:80'
-channel = grpc.insecure_channel(TICKLE_DB_URL)
-channel_ready_future = grpc.channel_ready_future(channel)
-channel_ready_future.result(timeout=10)
-stub = DocServiceStub(channel)
+# TICKLE_DB_URL = 'tickledbdocservice.internal-grpc.prod.mindtickle.com:80'
+# channel = grpc.insecure_channel(TICKLE_DB_URL)
+# channel_ready_future = grpc.channel_ready_future(channel)
+# channel_ready_future.result(timeout=10)
+# stub = DocServiceStub(channel)
 
 # cbhost = '10.11.120.220:8091'
 # cb = Bucket('couchbase://' + cbhost + '/ce', username='mindtickle', password='testcb6mindtickle')
 
-cbhost = 'cb6-node-1-staging.mindtickle.com:8091'
+# cbhost = 'cb6-node-1-staging.mindtickle.com:8091'
+cbhost = 'cb-backup-ce-node-1.internal.mindtickle.com:8091'
 cb = Bucket('couchbase://' + cbhost + '/ce', username='couchbase', password='couchbase')
+# cbhost_write = 'cb-6-node-1.internal.mindtickle.com:8091'
+# cb_write = Bucket('couchbase://'+cbhost_write+'/ce', username='mindtickle', password='d36b98ef7c6696eda2a6ber3')
+# cb_write = cb
+
 
 companyTypes = ['CUSTOMER', 'PROSPECT', 'QA', 'DEV', 'UNKNOWN', 'DELETED']
 
@@ -31,7 +36,8 @@ base_name = 'documents_media'
 sub_dir = ''
 failed_db_writer = ''
 path_writer = ''
-
+invalid_data_writer = ''
+company_settings_writer = ''
 
 def get_dir(prefix, sub_dir):
     current_dir = os.getcwd()
@@ -50,8 +56,8 @@ collections = {
 
 picasso_bucket = {
     1: 'mt-picasso-asia-singapore',
-    2: 'mt-picasso-eu-ireland',
-    3: 'mt-picasso-us-east',
+    2: 'mt-picasso-us-east',
+    3: 'mt-picasso-eu-ireland'
 }
 
 
@@ -146,14 +152,15 @@ def load_companies_to_process():
 
 def load_company_settings():
     global companySettings
-    fl = f'company_settings_{sub_dir}.csv'
+    fl = f'{sub_dir}/company_settings.csv'
+    if not os.path.exists(fl):
+        return
     with open(fl) as f:
         csv_reader = csv.reader(f)
         for row in csv_reader:
             id, obj = row[0], json.loads(row[1])
             companySettings[id] = obj
-    print(f'company settings loaded...')
-    return  companySettings
+    print(f'existing company settings loaded...')
 
 
 def read_company_settings_from_db():
@@ -210,12 +217,15 @@ def get_offset(file):
 
 
 def read_media_by_company(comp_id, offset=0):
-    global processed_companies
+    global processed_companies, invalid_data_writer
     print(f'Reading company data for company - {comp_id}')
     path = get_dir('downloaded', sub_dir)
     file = os.path.join(path, f'downloaded_{comp_id}.csv')
     if os.path.exists(file):
         offset = get_offset(file)
+    fl = get_dir('string_ids', sub_dir)
+    str_ids = open(f'{fl}/string_ids_{comp_id}.csv', 'w')
+    str_writer = csv.writer(str_ids)
     limit = 100
     cb.n1ql_timeout = 8000
     with open(file, 'a') as f:
@@ -228,10 +238,15 @@ def read_media_by_company(comp_id, offset=0):
                         comp_id, mediaTypes, limit,
                         offset)
                 query.timeout = 8000
-                medias = N1QLRequest(query, cb)
+                medias = N1QLRequest(query, cb)      #long media id
                 # if medias.metrics.get('resultCount', 0) == 0 :
                 #     break
                 for media_obj in medias:
+                    try:
+                        mId = int(media_obj['id'])
+                    except Exception as e:
+                        str_writer.writerow([json.dumps(media_obj)])
+                        continue
                     media_records.append([json.dumps(media_obj)])
 
                 if len(media_records)==0:
@@ -246,12 +261,13 @@ def read_media_by_company(comp_id, offset=0):
                 print(f"Exception reading medias from db - {comp_id} - offset - {offset}")
                 return
 
+    str_ids.close()
     print(f'Finished Reading company data for company - {comp_id}')
 
 
 
-def get_media_count_by_company(comp_type):
-    comp_list = get_companies_by_type(comp_type)
+def get_media_count_by_company(company_settings, comp_type):
+    comp_list = get_companies_by_type(company_settings, comp_type)
     comp_map = {}
     for comp in comp_list:
         medias = N1QLRequest(
@@ -269,7 +285,7 @@ def get_media_count_by_company(comp_type):
 
 
 
-def get_companies_by_type(comp_type='ALL'):
+def get_companies_by_type(company_settings, comp_type='ALL'):
     print(f'Getting companies by type - {comp_type}')
     if comp_type == 'ALL':
         return [comp.strip('.settings') for comp in companySettings.keys()]
@@ -277,28 +293,49 @@ def get_companies_by_type(comp_type='ALL'):
     if comp_type not in companyTypes:
         return []
 
-    companies = [comp.strip('.settings') for comp in companySettings if
-                 companySettings[comp].get('companyType') == comp_type]
+    companies = [comp.strip('.settings') for comp in company_settings if
+                 company_settings[comp].get('companyType') == comp_type]
     return companies
 
 
+def get_company_settings():
+    company_settings = {}
+    companies_by_types = N1QLRequest(_N1QLQuery('SELECT META().id,* FROM ce WHERE type=$1', 3), cb)
+    for comp_obj in companies_by_types:
+        if comp_obj['ce'].get('companyState') != 'ACTIVE':
+            continue
+        company_settings[comp_obj['id']] = comp_obj['ce']
+    return company_settings
+
+
 def read_batch_to_migrate_from_db(comp_list):
-    global companySettings
+    global companySettings, sub_dir, invalid_data_writer, company_settings_writer
     print('Start Reading medias from db....')
     for comp in comp_list:
         try:
-            n = f'{comp}.settings'
-            r1 = cb.get(n)
+            comp_id = f'{comp}.settings'
+            r1 = cb_write.get(comp_id)
         except Exception as e:
             print(f'Exception while reading company settings for - {comp} - {e}')
+            continue
 
         try:
+            # path = get_dir('invalid_data', sub_dir)
+            # file = os.path.join(path, f'invalid_data_{comp}.csv')
+            # invalid_reads = open(file, 'w')
+            # invalid_data_writer = csv.writer(invalid_reads)
             if r1.value.get('companyState') != 'ACTIVE':
                 continue
-            companySettings[n] = r1.value
+            if r1.value.get('companyType') == 'DELETED':
+                # invalid_data_writer.writerow([comp, 'DELETED', 'MIGRATION_NOT_REQD'])
+                continue
+            if comp_id not in companySettings:
+                companySettings[comp_id] = r1.value
+                company_settings_writer.writerow([comp_id, json.dumps(r1.value)])
             read_media_by_company(comp)
         except Exception as e:
             print(f'Exception while reading media for company - {comp} - {e}')
+        # invalid_reads.close()
     print(f'Finished Reading data from db')
 
     # for comp in companies_list[:20]:
@@ -312,10 +349,10 @@ def read_batch_to_migrate_from_db(comp_list):
 
 
 def read_data_for_migration(comp_list, dir):
-    global sub_dir, failed_db_writer, companySettings
+    global sub_dir, failed_db_writer, companySettings, company_settings_writer
     sub_dir = dir
     # read_company_settings_from_db()
-    # load_company_settings()
+    load_company_settings()
     # n = f'{comp_list[0]}.settings'
     # r1 = cb.get(n)
     # companySettings = {n: r1.value}
@@ -328,15 +365,20 @@ def read_data_for_migration(comp_list, dir):
     # r = cb.get(f'{comp_list[0]}.settings')
     dir_path = get_dir('', sub_dir)
     failed_reads = open(f'{dir_path}/failed_db_reads.csv','a')
-    failed_db_writer=csv.writer(failed_reads)
+    failed_db_writer = csv.writer(failed_reads)
+
+    company_reads = open(f'{dir_path}/company_settings.csv', 'a')
+    company_settings_writer = csv.writer(company_reads)
 
     read_batch_to_migrate_from_db(comp_list)
     failed_reads.close()
-    write_company_settings()
+    company_reads.close()
+    # write_company_settings()
 
 
 
-# if __name__=='__main__':
-#     dir = 'greenwood'
-#     comp_list = ['1282969819443079556']
-#     read_data_for_migration(comp_list, dir)
+if __name__=='__main__':
+    settings = get_company_settings()
+    for comp in companyTypes:
+        get_media_count_by_company(settings, comp)
+
